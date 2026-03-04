@@ -1,113 +1,163 @@
-export default async function handler(req, res) {
-  // อนุญาตเฉพาะ POST เท่านั้น
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+import { kv } from '@vercel/kv';
+
+export const config = {
+  api: {
+    // สำคัญมาก: กันสลิป base64 เกิน 1MB (ค่าเริ่มต้น)
+    bodyParser: { sizeLimit: '10mb' },
+  },
+};
+
+// เมนูตั้งต้น (ใช้ตอน KV ใช้ไม่ได้/ยังไม่ตั้งค่า)
+const DEFAULT_SETTINGS = {
+  promptPay: '0812345678',
+  menuItems: [
+    { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)', price: 299, image: '🍲', type: 'main', desc: '', isAvailable: true },
+    { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)', price: 89, image: '🥩', type: 'addon', isAvailable: true },
+    { id: 'a2', name: 'ชุดผักรวม', price: 49, image: '🥬', type: 'addon', isAvailable: true },
+    { id: 'a3', name: 'ไข่ไก่', price: 10, image: '🥚', type: 'addon', isAvailable: true },
+    { id: 'a4', name: 'วุ้นเส้น', price: 15, image: '🍜', type: 'addon', isAvailable: true },
+  ],
+};
+
+async function getStoreSettingsSafe() {
+  try {
+    const data = await kv.get('storeSettings');
+    if (data && Array.isArray(data.menuItems)) return data;
+  } catch (e) {
+    // ถ้า KV ไม่ได้ตั้งค่า env ก็จะเข้าตรงนี้
+    console.log('KV not ready, fallback to DEFAULT_SETTINGS');
   }
+  return DEFAULT_SETTINGS;
+}
+
+function normalizePhone(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function buildOrderText(cart, menuItems) {
+  let text = '';
+  for (const [id, qtyRaw] of Object.entries(cart || {})) {
+    const qty = Number(qtyRaw);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const item = menuItems.find((m) => m.id === id);
+    if (item) text += `- ${item.name} x ${qty}\n`;
+  }
+  return text.trim() || '-';
+}
+
+function calcTotalFromMenu(cart, menuItems) {
+  let sum = 0;
+  for (const [id, qtyRaw] of Object.entries(cart || {})) {
+    const qty = Number(qtyRaw);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const item = menuItems.find((m) => m.id === id);
+    if (item) sum += Number(item.price || 0) * qty;
+  }
+  return sum;
+}
+
+async function pushLineText({ token, to, text }) {
+  // ใส่ timeout กันค้าง
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
 
   try {
-    // ดึงข้อมูลจาก body พร้อมกำหนดค่าเริ่มต้น
-    const {
-      customerInfo = {},
-      cart = {},
-      totalPrice = 0,
-      location = {},
-      slipImageBase64
-    } = req.body || {};
+    const resp = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        to,
+        messages: [{ type: 'text', text }],
+      }),
+      signal: controller.signal,
+    });
 
-    // 1. ดึงเมนูจาก Vercel KV แบบไดนามิก หากไม่สำเร็จจะใช้เมนูตั้งต้น
-    let storeData = null;
-    try {
-      const kvModule = await import('@vercel/kv');
-      const kvClient = kvModule.kv || kvModule.default || kvModule;
-      storeData = await kvClient.get?.('storeSettings');
-    } catch (dbError) {
-      console.log('ยังไม่ได้เชื่อมต่อฐานข้อมูล หรือฐานข้อมูลมีปัญหา (กำลังใช้เมนูตั้งต้น)');
+    const bodyText = await resp.text(); // เอาไว้ดู error จาก LINE
+    return { ok: resp.ok, status: resp.status, bodyText };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  try {
+    const body = req.body || {};
+
+    const customerInfo = body.customerInfo || {};
+    const cart = body.cart || {};
+    const location = body.location || null;
+    const slipImageBase64 = body.slipImageBase64 || '';
+
+    // ---------- Validate ----------
+    const name = String(customerInfo.name || '').trim();
+    const phone = normalizePhone(customerInfo.phone);
+
+    if (!name) return res.status(400).json({ error: 'กรุณากรอกชื่อผู้รับ' });
+    if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (10 หลัก)' });
+    if (!location || location.lat == null || location.lng == null) return res.status(400).json({ error: 'กรุณาแชร์ตำแหน่งที่ตั้งสำหรับจัดส่ง' });
+    if (!cart || Object.keys(cart).length === 0) return res.status(400).json({ error: 'ตะกร้าว่าง กรุณาเลือกเมนูก่อน' });
+    if (!slipImageBase64) return res.status(400).json({ error: 'กรุณาแนบสลิปโอนเงิน' });
+
+    const LINE_TOKEN = process.env.LINE_TOKEN;
+    const LINE_USER_ID = process.env.LINE_USER_ID;
+
+    // ถ้ายังไม่ตั้งค่า env ให้ตอบชัด ๆ (จะได้ไม่ขึ้น “เซิร์ฟเวอร์ขัดข้อง” แบบเดาไม่ออก)
+    if (!LINE_TOKEN || !LINE_USER_ID) {
+      return res.status(500).json({
+        error: 'ยังไม่ได้ตั้งค่า LINE_TOKEN หรือ LINE_USER_ID ใน Environment',
+      });
     }
 
-    const defaultMenu = [
-      { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)' },
-      { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)' },
-      { id: 'a2', name: 'ชุดผักรวม' },
-      { id: 'a3', name: 'ไข่ไก่' },
-      { id: 'a4', name: 'วุ้นเส้น' }
-    ];
-    const menuItems =
-      Array.isArray(storeData?.menuItems) && storeData.menuItems.length > 0
-        ? storeData.menuItems
-        : defaultMenu;
+    // ---------- Load menu ----------
+    const storeSettings = await getStoreSettingsSafe();
+    const menuItems = Array.isArray(storeSettings.menuItems) ? storeSettings.menuItems : DEFAULT_SETTINGS.menuItems;
 
-    // 2. สรุปรายการอาหาร
-    let orderText = '';
-    for (const [id, qty] of Object.entries(cart)) {
-      const item = menuItems.find((m) => m.id === id);
-      if (item) orderText += `- ${item.name} x ${qty}\n`;
-    }
+    // ---------- Build message ----------
+    const orderText = buildOrderText(cart, menuItems);
 
-    // 3. สร้างลิงก์แผนที่ หากมี lat/lng
-    let mapLink = '-';
-    if (
-      location &&
-      typeof location.lat !== 'undefined' &&
-      typeof location.lng !== 'undefined'
-    ) {
-      mapLink = `https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`;
-    }
+    // คำนวณยอดจากฝั่งเซิร์ฟเวอร์ (กันยอดถูกแก้จาก client)
+    const serverTotal = calcTotalFromMenu(cart, menuItems);
 
-    // 4. จัดข้อความที่จะส่งไป LINE
+    const mapLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      `${location.lat},${location.lng}`
+    )}`;
+
+    const addressDetail = String(customerInfo.addressDetail || '').trim() || '-';
+
     const lineMessage =
       `🚨 มีออเดอร์ใหม่เข้าครับ! 🚨\n\n` +
-      `👤 ลูกค้า: ${customerInfo.name || '-'}\n` +
-      `📞 โทร: ${customerInfo.phone || '-'}\n` +
+      `👤 ลูกค้า: ${name}\n` +
+      `📞 โทร: ${phone}\n` +
       `📍 พิกัด: ${mapLink}\n` +
-      `จุดสังเกต: ${customerInfo.addressDetail || '-'}\n\n` +
-      `📝 รายการอาหาร:\n${orderText || '-'}\n` +
-      `💰 ยอดโอน: ${totalPrice || 0} บาท\n` +
-      `(ระบบได้รับสลิปเรียบร้อยแล้ว เช็คสลิปได้ในระบบหลังบ้าน)`;
+      `จุดสังเกต: ${addressDetail}\n\n` +
+      `📝 รายการอาหาร:\n${orderText}\n\n` +
+      `💰 ยอดโอน: ${serverTotal} บาท\n` +
+      `✅ แนบสลิปแล้ว (รับไฟล์เรียบร้อย)`;
 
-    // 5. กำหนดคีย์ LINE OA – ควรตั้งผ่าน environment variable ในการใช้งานจริง
-    const LINE_TOKEN =
-      process.env.LINE_TOKEN ||
-      'Loo6XSt531o9ROy7viys0+hr8B9ObGecih6uq57yjnWkkx29yvr7pnrlvn2nM4EtcSYi3FWxoC0+kYS6E2ekXcpO5imL/7E7OvDgR/GRKlOK0rFuQCu8zrt3h2YY/nVXbqvOd5d6NZ/4FfLvCgIlagdB04t89/1O/w1cDnyilFU=';
-    const LINE_USER_ID =
-      process.env.LINE_USER_ID || 'Ud6d0ed9226ba3154238979aff2f09919';
+    // ---------- Send to LINE ----------
+    const result = await pushLineText({
+      token: LINE_TOKEN,
+      to: LINE_USER_ID,
+      text: lineMessage,
+    });
 
-    // 6. เลือกใช้ fetch ของระบบ หรือ fallback เป็น node-fetch
-    let fetchFn = globalThis.fetch;
-    if (typeof fetchFn === 'undefined') {
-      const nodeFetch = await import('node-fetch');
-      fetchFn = nodeFetch.default;
-    }
-
-    try {
-      const response = await fetchFn('https://api.line.me/v2/bot/message/push', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${LINE_TOKEN}`
-        },
-        body: JSON.stringify({
-          to: LINE_USER_ID,
-          messages: [{ type: 'text', text: lineMessage }]
-        })
+    if (!result.ok) {
+      console.error('LINE API Error:', result.status, result.bodyText);
+      return res.status(502).json({
+        error: 'ส่งแจ้งเตือน LINE ไม่สำเร็จ',
+        // ช่วยให้คุณดูใน Vercel Logs ได้ว่า LINE ตอบอะไร
+        status: result.status,
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('LINE API Error:', errorText);
-        return res
-          .status(500)
-          .json({ error: 'ไม่สามารถส่งแจ้งเตือน LINE ได้' });
-      }
-    } catch (apiError) {
-      console.error('Error calling LINE API:', apiError);
-      return res.status(500).json({ error: 'ไม่สามารถส่งแจ้งเตือน LINE ได้' });
     }
 
-    // สำเร็จ
     return res.status(200).json({ success: true });
-  } catch (error) {
-    // error อื่นๆ
-    console.error('Server Error:', error);
+  } catch (err) {
+    console.error('send-order fatal error:', err);
     return res.status(500).json({ error: 'ระบบเซิร์ฟเวอร์ขัดข้อง' });
   }
 }
