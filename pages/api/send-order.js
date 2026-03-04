@@ -1,83 +1,128 @@
 // pages/api/send-order.js
-import { kv } from '@vercel/kv';
-
 export const config = {
   api: {
-    bodyParser: { sizeLimit: '10mb' },
+    // กันสลิป base64 เกินค่าเริ่มต้น
+    bodyParser: { sizeLimit: '12mb' },
   },
 };
+
+import https from 'node:https';
+
+// ส่งข้อความไป LINE ด้วย https (ไม่พึ่ง fetch / node-fetch)
+function linePush({ token, to, text, timeoutMs = 12000 }) {
+  const payload = JSON.stringify({
+    to,
+    messages: [{ type: 'text', text }],
+  });
+
+  return new Promise((resolve) => {
+    const req = https.request(
+      'https://api.line.me/v2/bot/message/push',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          resolve({
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode,
+            body: data,
+          });
+        });
+      }
+    );
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error('LINE_TIMEOUT'));
+    });
+
+    req.on('error', (err) => {
+      resolve({
+        ok: false,
+        status: 0,
+        body: err?.message || 'LINE_REQUEST_ERROR',
+      });
+    });
+
+    req.write(payload);
+    req.end();
+  });
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { customerInfo, cart, totalPrice, location } = req.body;
+    const body = req.body || {};
+    const customerInfo = body.customerInfo || {};
+    const cart = body.cart || {};
+    const location = body.location || null;
+    const slipImageBase64 = body.slipImageBase64 || '';
 
-    // 1. ดึงข้อมูลเมนู (ถ้าฐานข้อมูลมีปัญหา ให้ใช้ค่าเริ่มต้น)
-    let menuItems = [
-      { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)' },
-      { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)' },
-      { id: 'a2', name: 'ชุดผักรวม' },
-      { id: 'a3', name: 'ไข่ไก่' },
-      { id: 'a4', name: 'วุ้นเส้น' }
-    ];
+    // ===== validate ให้แน่น (กันหลุด catch ใหญ่) =====
+    const name = String(customerInfo.name || '').trim();
+    const phone = String(customerInfo.phone || '').replace(/\D/g, '');
 
-    try {
-      const storeData = await kv.get('storeSettings');
-      if (storeData && storeData.menuItems) {
-        menuItems = storeData.menuItems;
-      }
-    } catch (dbError) {
-      console.log('KV connection waiting...');
+    if (!name) return res.status(400).json({ error: 'กรุณากรอกชื่อผู้รับ' });
+    if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (10 หลัก)' });
+    if (!location || location.lat == null || location.lng == null) return res.status(400).json({ error: 'กรุณาแชร์ตำแหน่งที่ตั้งสำหรับจัดส่ง' });
+    if (!cart || typeof cart !== 'object' || Object.keys(cart).length === 0) return res.status(400).json({ error: 'ตะกร้าว่าง กรุณาเลือกเมนูก่อน' });
+    if (!slipImageBase64 || typeof slipImageBase64 !== 'string') return res.status(400).json({ error: 'กรุณาแนบสลิปโอนเงิน' });
+
+    const LINE_TOKEN = (process.env.LINE_TOKEN || '').trim();      // ต้องตั้งใน Vercel Env
+    const LINE_USER_ID = (process.env.LINE_USER_ID || '').trim();  // ต้องตั้งใน Vercel Env
+
+    if (!LINE_TOKEN || !LINE_USER_ID) {
+      return res.status(500).json({
+        error: 'ยังไม่ได้ตั้งค่า LINE_TOKEN หรือ LINE_USER_ID ใน Environment',
+      });
     }
 
-    // 2. สรุปรายการอาหาร
-    let orderDetails = '';
-    for (const [id, qty] of Object.entries(cart)) {
-      const item = menuItems.find(m => m.id === id);
-      if (item) orderDetails += `- ${item.name} x ${qty}\n`;
+    // สร้างลิงก์แผนที่แบบที่คลิกไปเปิด Google Maps ได้จริง (แก้บั๊กตรงนี้แล้ว)
+    const mapLink = `https://maps.google.com/?q=${location.lat},${location.lng}`;
+
+    // สรุปรายการแบบไม่ทำให้พัง
+    let orderText = '';
+    for (const [id, qtyRaw] of Object.entries(cart)) {
+      const qty = Number(qtyRaw);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      orderText += `- ${id} x ${qty}\n`; // ถ้าต้องการชื่อเมนูจริง ให้ใช้ settings/KV มาแมพเพิ่มภายหลัง
     }
+    orderText = orderText.trim() || '-';
 
-    // 3. ลิงก์แผนที่ Google Maps (แก้ไขจุดพิมพ์ผิดแล้ว)
-    const mapLink = `https://www.google.com/maps?q=${location.lat},${location.lng}`;
+    const addressDetail = String(customerInfo.addressDetail || '').trim() || '-';
+    const totalPrice = Number(body.totalPrice || 0);
 
-    // 4. ข้อความแจ้งเตือน LINE
-    const message = 
+    const msg =
       `🚨 มีออเดอร์ใหม่เข้าครับ! 🚨\n\n` +
-      `👤 ลูกค้า: ${customerInfo.name || '-'}\n` +
-      `📞 โทร: ${customerInfo.phone || '-'}\n` +
+      `👤 ลูกค้า: ${name}\n` +
+      `📞 โทร: ${phone}\n` +
       `📍 พิกัด: ${mapLink}\n` +
-      `🧭 จุดสังเกต: ${customerInfo.addressDetail || '-'}\n\n` +
-      `📝 รายการ:\n${orderDetails || '-'}\n` +
+      `🧭 จุดสังเกต: ${addressDetail}\n\n` +
+      `📝 รายการ:\n${orderText}\n\n` +
       `💰 ยอดโอน: ${totalPrice} บาท\n` +
-      `✅ ระบบได้รับสลิปแล้ว`;
+      `✅ แนบสลิปแล้ว`;
 
-    // คีย์ LINE ของคุณ (ใส่กลับเข้าโค้ดให้เลยเพื่อความชัวร์)
-    const LINE_TOKEN = 'Loo6XSt531o9ROy7viys0+hr8B9ObGecih6uq57yjnWkkx29yvr7pnrlvn2nM4EtcSYi3FWxoC0+kYS6E2ekXcpO5imL/7E7OvDgR/GRKlOK0rFuQCu8zrt3h2YY/nVXbqvOd5d6NZ/4FfLvCgIlagdB04t89/1O/w1cDnyilFU=';
-    const LINE_USER_ID = 'Ud6d0ed9226ba3154238979aff2f09919';
+    const result = await linePush({ token: LINE_TOKEN, to: LINE_USER_ID, text: msg });
 
-    // 5. ส่งเข้า LINE
-    const lineRes = await fetch('https://api.line.me/v2/bot/message/push', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${LINE_TOKEN}`
-      },
-      body: JSON.stringify({
-        to: LINE_USER_ID,
-        messages: [{ type: 'text', text: message }]
-      })
-    });
-
-    if (!lineRes.ok) {
-      const errorDetail = await lineRes.text();
-      console.error('LINE_API_ERROR:', errorDetail);
-      return res.status(502).json({ error: 'ส่งแจ้งเตือน LINE ไม่สำเร็จ' });
+    if (!result.ok) {
+      // ส่ง error ที่อ่านรู้เรื่อง (ไม่ใช่ “เซิร์ฟเวอร์ขัดข้อง” แบบเดา)
+      console.error('LINE_PUSH_FAIL', result.status, result.body);
+      return res.status(502).json({
+        error: `ส่งแจ้งเตือน LINE ไม่สำเร็จ (status ${result.status})`,
+      });
     }
 
     return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('SERVER_ERROR:', err);
-    return res.status(500).json({ error: 'ระบบเซิร์ฟเวอร์ขัดข้อง กรุณาลองใหม่' });
+  } catch (e) {
+    console.error('SEND_ORDER_FATAL', e);
+    return res.status(500).json({ error: 'ระบบเซิร์ฟเวอร์ขัดข้อง' });
   }
 }
