@@ -1,5 +1,4 @@
-import Head from 'next/head';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map } from 'lucide-react';
 
 export default function Home() {
@@ -20,7 +19,8 @@ export default function Home() {
     { id: 'a4', name: 'วุ้นเส้น', price: 15, image: '🍜', type: 'addon' },
   ];
 
-  const PROMPTPAY_NUMBER = '0812345678'; // <-- เปลี่ยนเป็นเบอร์พร้อมเพย์ของคุณที่นี่
+  // เปลี่ยนเป็นเบอร์พร้อมเพย์ของคุณที่นี่
+  const PROMPTPAY_NUMBER = '0812345678'; 
 
   const updateCart = (id, delta) => {
     setCart(prev => {
@@ -105,14 +105,18 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    document.title = "หมูจุ่มโตเกียว Delivery";
+    if (!document.querySelector('script[src="https://cdn.tailwindcss.com"]')) {
+      const script = document.createElement('script');
+      script.src = "https://cdn.tailwindcss.com";
+      document.head.appendChild(script);
+    }
+  }, []);
+
   return (
-    <>
-      <Head>
-        <title>หมูจุ่มโตเกียว Delivery</title>
-        <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-      </Head>
-      <div className="min-h-screen bg-[#fff9f5] font-sans text-gray-800 selection:bg-orange-200">
-        <header className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4 shadow-md sticky top-0 z-50 rounded-b-3xl">
+    <div className="min-h-screen bg-[#fff9f5] font-sans text-gray-800 selection:bg-orange-200">
+      <header className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4 shadow-md sticky top-0 z-50 rounded-b-3xl">
           <div className="max-w-md mx-auto flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="bg-white p-2 rounded-full shadow-sm text-2xl">🍲</div>
@@ -257,7 +261,7 @@ export default function Home() {
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 text-center">
                 <h3 className="font-bold text-gray-800 mb-1">สแกน QR เพื่อชำระเงิน</h3>
                 <div className="bg-blue-900 p-4 rounded-xl inline-block mb-4 w-full max-w-[250px]">
-                  <img src="[https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/PromptPay-logo.jpg/1200px-PromptPay-logo.jpg](https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/PromptPay-logo.jpg/1200px-PromptPay-logo.jpg)" alt="PromptPay" className="h-6 mx-auto mb-3 rounded-sm object-cover" />
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/PromptPay-logo.jpg/1200px-PromptPay-logo.jpg" alt="PromptPay" className="h-6 mx-auto mb-3 rounded-sm object-cover" />
                   <div className="bg-white p-2 rounded-lg"><img src={`https://promptpay.io/${PROMPTPAY_NUMBER}/${totalPrice}.png`} alt="QR Code" className="w-full" /></div>
                   <p className="text-white text-sm font-medium mt-3">ยอดเงิน: {totalPrice} บาท</p>
                 </div>
@@ -299,11 +303,18 @@ export default function Home() {
         )}
 
         {step > 1 && step < 4 && (
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t z-40">
-            <div className="max-w-md mx-auto">
-              {step === 2 ? (
-                <button onClick={handleProceedToPayment} className="w-full bg-orange-600 text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2">ยืนยันข้อมูลจัดส่ง <ChevronRight size={20} /></button>
-              ) : (
-                <button onClick={submitOrder} disabled={isSubmitting} className={`w-full text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2 ${isSubmitting ? 'bg-gray-400' : 'bg-green-600'}`}>
-                  {isSubmitting ? 'กำลังส่งข้อมูล...' : 'ส่งสลิป ยืนยันคำสั่งซื้อ'} <CheckCircle size={20} />
-                </button>
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t z-40">
+          <div className="max-w-md mx-auto">
+            {step === 2 ? (
+              <button onClick={handleProceedToPayment} className="w-full bg-orange-600 text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2">ยืนยันข้อมูลจัดส่ง <ChevronRight size={20} /></button>
+            ) : (
+              <button onClick={submitOrder} disabled={isSubmitting} className={`w-full text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2 ${isSubmitting ? 'bg-gray-400' : 'bg-green-600'}`}>
+                {isSubmitting ? 'กำลังส่งข้อมูล...' : 'ส่งสลิป ยืนยันคำสั่งซื้อ'} <CheckCircle size={20} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
