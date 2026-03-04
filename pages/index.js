@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map } from 'lucide-react';
 
@@ -11,17 +11,16 @@ export default function Home() {
   const [slipImage, setSlipImage] = useState(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // เพิ่ม State สำหรับเก็บข้อมูลจาก API
+  const [storeData, setStoreData] = useState(null);
 
-  const menuItems = [
-    { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)', price: 299, image: '🍲', type: 'main', desc: 'หมูสไลด์นุ่มๆ พร้อมผักรวมและน้ำจิ้มรสเด็ด' },
-    { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)', price: 89, image: '🥩', type: 'addon' },
-    { id: 'a2', name: 'ชุดผักรวม', price: 49, image: '🥬', type: 'addon' },
-    { id: 'a3', name: 'ไข่ไก่', price: 10, image: '🥚', type: 'addon' },
-    { id: 'a4', name: 'วุ้นเส้น', price: 15, image: '🍜', type: 'addon' },
-  ];
-
-  // เปลี่ยนเป็นเบอร์พร้อมเพย์ของคุณที่นี่
-  const PROMPTPAY_NUMBER = '0812345678'; 
+  // ดึงข้อมูลเมนูและพร้อมเพย์จาก API เมื่อโหลดหน้าเว็บ
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => setStoreData(data));
+  }, []);
 
   const updateCart = (id, delta) => {
     setCart(prev => {
@@ -35,6 +34,10 @@ export default function Home() {
       return { ...prev, [id]: next };
     });
   };
+
+  // รอให้โหลดข้อมูลเสร็จก่อน ค่อยคำนวณ
+  const menuItems = storeData ? storeData.menuItems : [];
+  const PROMPTPAY_NUMBER = storeData ? storeData.promptPay : '';
 
   const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
   const totalPrice = Object.entries(cart).reduce((sum, [id, qty]) => {
@@ -83,28 +86,24 @@ export default function Home() {
     if (!slipImage) return setError('กรุณาแนบสลิปโอนเงิน');
     setIsSubmitting(true);
     setError('');
-
     try {
       const response = await fetch('/api/send-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerInfo, cart, totalPrice, location, slipImageBase64: slipImage
-        })
+        body: JSON.stringify({ customerInfo, cart, totalPrice, location, slipImageBase64: slipImage })
       });
-
       const data = await response.json();
-      if (response.ok) {
-        setStep(4);
-      } else {
-        setError(data.error || 'ไม่สามารถส่งคำสั่งซื้อได้ กรุณาลองใหม่');
-      }
+      if (response.ok) setStep(4);
+      else setError(data.error || 'ไม่สามารถส่งคำสั่งซื้อได้');
     } catch (err) {
       setError('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // แสดงหน้าจอโหลดระหว่างรอข้อมูลจาก API
+  if (!storeData) return <div className="min-h-screen flex items-center justify-center bg-[#fff9f5]">กำลังโหลดเมนูอาหาร...</div>;
 
   return (
     <>
@@ -153,7 +152,7 @@ export default function Home() {
                   <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
                     <Utensils className="text-orange-500" size={20} /> เมนูหลัก
                   </h2>
-                  {menuItems.filter(m => m.type === 'main').map(item => (
+                  {menuItems.filter(m => m.type === 'main' && m.isAvailable).map(item => (
                     <div key={item.id} className="bg-white p-4 rounded-2xl shadow-sm border border-orange-100 flex gap-4 mb-3">
                       <div className="w-24 h-24 bg-orange-50 rounded-xl flex items-center justify-center text-5xl shrink-0">
                         {item.image}
@@ -174,17 +173,22 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
+                  {menuItems.filter(m => m.type === 'main' && !m.isAvailable).length > 0 && (
+                    <p className="text-sm text-red-500 mt-2">*บางเมนูหลักหมดชั่วคราว</p>
+                  )}
                 </section>
 
                 <section>
                   <h2 className="text-lg font-bold text-gray-800 mb-3">สั่งเพิ่มความอร่อย</h2>
                   <div className="grid grid-cols-2 gap-3">
                     {menuItems.filter(m => m.type === 'addon').map(item => (
-                      <div key={item.id} className="bg-white p-3 rounded-2xl shadow-sm border border-orange-50 flex flex-col items-center text-center">
+                      <div key={item.id} className={`bg-white p-3 rounded-2xl shadow-sm border border-orange-50 flex flex-col items-center text-center ${!item.isAvailable ? 'opacity-50 grayscale' : ''}`}>
                         <div className="text-4xl mb-2">{item.image}</div>
                         <h3 className="font-medium text-sm text-gray-700">{item.name}</h3>
                         <span className="text-orange-600 font-bold text-sm mb-3">+฿{item.price}</span>
-                        {cart[item.id] > 0 ? (
+                        {!item.isAvailable ? (
+                          <span className="text-xs font-bold text-red-500 bg-red-50 w-full py-1.5 rounded-full">หมดชั่วคราว</span>
+                        ) : cart[item.id] > 0 ? (
                           <div className="w-full flex items-center justify-between bg-orange-50 rounded-full px-1 py-1">
                             <button onClick={() => updateCart(item.id, -1)} className="w-7 h-7 rounded-full bg-white text-orange-600 shadow-sm flex items-center justify-center"><Minus size={14} /></button>
                             <span className="font-bold text-sm">{cart[item.id]}</span>
