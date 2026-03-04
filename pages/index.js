@@ -13,7 +13,6 @@ export default function Home() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // เก็บข้อมูลเมนู
   const [storeData, setStoreData] = useState({
     promptPay: '0812345678',
     menuItems: [
@@ -25,7 +24,6 @@ export default function Home() {
     ]
   });
 
-  // พยายามดึงข้อมูลจาก API ถ้ามี (ถ้าไม่มีหรือ Error จะใช้ข้อมูลตั้งต้นด้านบน)
   useEffect(() => {
     fetch('/api/settings')
       .then(res => {
@@ -35,7 +33,7 @@ export default function Home() {
       .then(data => {
         if (data && data.menuItems) setStoreData(data);
       })
-      .catch(err => console.log('กำลังใช้ข้อมูลเมนูตั้งต้น (ออฟไลน์)'));
+      .catch(err => console.log('กำลังใช้ข้อมูลเมนูตั้งต้น'));
   }, []);
 
   const updateCart = (id, delta) => {
@@ -53,7 +51,6 @@ export default function Home() {
 
   const menuItems = storeData.menuItems;
   const PROMPTPAY_NUMBER = storeData.promptPay;
-
   const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
   const totalPrice = Object.entries(cart).reduce((sum, [id, qty]) => {
     const item = menuItems.find(m => m.id === id);
@@ -74,7 +71,7 @@ export default function Home() {
         setIsLocating(false);
       },
       (err) => {
-        setError('กรุณาอนุญาตการเข้าถึงตำแหน่งที่ตั้ง เพื่อให้เราจัดส่งได้ถูกต้องครับ');
+        setError('กรุณาอนุญาตการเข้าถึงตำแหน่งที่ตั้ง');
         setIsLocating(false);
       }
     );
@@ -82,7 +79,7 @@ export default function Home() {
 
   const handleProceedToPayment = () => {
     if (!customerInfo.name.trim()) return setError('กรุณากรอกชื่อผู้รับ');
-    if (!/^\d{10}$/.test(customerInfo.phone)) return setError('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (10 หลัก)');
+    if (!/^\d{10}$/.test(customerInfo.phone)) return setError('กรุณากรอกเบอร์โทรศัพท์ (10 หลัก)');
     if (!location) return setError('กรุณากดแชร์ตำแหน่งที่ตั้งสำหรับจัดส่ง');
     setError('');
     setStep(3);
@@ -101,24 +98,52 @@ export default function Home() {
     if (!slipImage) return setError('กรุณาแนบสลิปโอนเงิน');
     setIsSubmitting(true);
     setError('');
+    
     try {
-      // แก้ไข: เปลี่ยนการส่ง Base64 เต็มรูปภาพ ให้เป็นแค่การส่ง string ยืนยันว่ามีรูป
+      // 1. แปลงรหัสเมนูเป็นชื่อภาษาไทยให้เรียบร้อยก่อนส่งไปเซิร์ฟเวอร์
+      const orderDetails = Object.entries(cart).map(([id, qty]) => {
+        const item = menuItems.find(m => m.id === id);
+        return { name: item ? item.name : id, qty: qty };
+      });
+
+      // 2. อัปโหลดสลิปไปที่ ImgBB
+      const base64Data = slipImage.split(',')[1];
+      const formData = new FormData();
+      formData.append('image', base64Data);
+
+      const IMGBB_API_KEY = '5f481fd2d9b156fc69bbc59eafb656ff'; 
+      const imgRes = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+        method: 'POST',
+        body: formData
+      });
+      const imgData = await imgRes.json();
+
+      if (!imgData.success) {
+        throw new Error('ไม่สามารถอัปโหลดรูปสลิปได้');
+      }
+      
+      const slipUrl = imgData.data.url;
+
+      // 3. ส่งข้อมูลออเดอร์พร้อม URL สลิปไปให้หลังบ้าน
       const response = await fetch('/api/send-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           customerInfo, 
-          cart, 
+          orderDetails, // ส่งชื่อภาษาไทยไปแทน
           totalPrice, 
           location, 
-          slipImageBase64: slipImage ? 'has_slip' : '' 
+          slipImageUrl: slipUrl 
         })
       });
+      
       const data = await response.json();
       if (response.ok) setStep(4);
       else setError(data.error || 'ไม่สามารถส่งคำสั่งซื้อได้');
+      
     } catch (err) {
-      setError('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย');
+      console.error(err);
+      setError('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย หรืออัปโหลดรูปไม่สำเร็จ');
     } finally {
       setIsSubmitting(false);
     }
@@ -129,20 +154,18 @@ export default function Home() {
       <Head>
         <title>หมูจุ่มโตเกียว Delivery</title>
       </Head>
-      <div className="min-h-screen bg-[#fff9f5] font-sans text-gray-800 selection:bg-orange-200">
+      <div className="min-h-screen bg-[#fff9f5] font-sans text-gray-800">
         <header className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4 shadow-md sticky top-0 z-50 rounded-b-3xl">
             <div className="max-w-md mx-auto flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="bg-white p-2 rounded-full shadow-sm text-2xl">🍲</div>
                 <div>
-                  <h1 className="text-xl font-bold leading-tight">หมูจุ่มโตเกียว</h1>
-                  <p className="text-xs opacity-90">Delivery ส่งตรงถึงหน้าบ้าน</p>
+                  <h1 className="text-xl font-bold">หมูจุ่มโตเกียว</h1>
+                  <p className="text-xs opacity-90">Delivery ส่งตรงถึงบ้าน</p>
                 </div>
               </div>
               {step > 1 && (
-                <button onClick={() => setStep(step - 1)} className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm">
-                  ย้อนกลับ
-                </button>
+                <button onClick={() => setStep(step - 1)} className="text-sm bg-white/20 px-3 py-1 rounded-full">ย้อนกลับ</button>
               )}
             </div>
           </header>
@@ -152,11 +175,9 @@ export default function Home() {
               <div className="flex justify-between items-center mb-6 px-4">
                 {[1, 2, 3].map(s => (
                   <div key={s} className="flex flex-col items-center relative z-10">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm mb-1 transition-colors ${step >= s ? 'bg-orange-500 text-white shadow-md' : 'bg-gray-200 text-gray-500'}`}>
-                      {s}
-                    </div>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm mb-1 ${step >= s ? 'bg-orange-500 text-white shadow-md' : 'bg-gray-200 text-gray-500'}`}>{s}</div>
                     <span className={`text-[10px] ${step >= s ? 'text-orange-600 font-medium' : 'text-gray-400'}`}>
-                      {s === 1 ? 'เลือกเมนู' : s === 2 ? 'ที่อยู่จัดส่ง' : 'ชำระเงิน'}
+                      {s === 1 ? 'เลือกเมนู' : s === 2 ? 'ที่อยู่' : 'ชำระเงิน'}
                     </span>
                   </div>
                 ))}
@@ -167,14 +188,10 @@ export default function Home() {
             {step === 1 && (
               <div className="space-y-6">
                 <section>
-                  <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <Utensils className="text-orange-500" size={20} /> เมนูหลัก
-                  </h2>
+                  <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><Utensils className="text-orange-500" size={20} /> เมนูหลัก</h2>
                   {menuItems.filter(m => m.type === 'main' && m.isAvailable).map(item => (
                     <div key={item.id} className="bg-white p-4 rounded-2xl shadow-sm border border-orange-100 flex gap-4 mb-3">
-                      <div className="w-24 h-24 bg-orange-50 rounded-xl flex items-center justify-center text-5xl shrink-0">
-                        {item.image}
-                      </div>
+                      <div className="w-24 h-24 bg-orange-50 rounded-xl flex items-center justify-center text-5xl shrink-0">{item.image}</div>
                       <div className="flex-1 flex flex-col justify-between">
                         <div>
                           <h3 className="font-bold text-gray-800">{item.name}</h3>
@@ -191,9 +208,6 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
-                  {menuItems.filter(m => m.type === 'main' && !m.isAvailable).length > 0 && (
-                    <p className="text-sm text-red-500 mt-2">*บางเมนูหลักหมดชั่วคราว</p>
-                  )}
                 </section>
 
                 <section>
@@ -269,7 +283,7 @@ export default function Home() {
                   <div className="space-y-2 mb-4">
                     {Object.entries(cart).map(([id, qty]) => {
                       const item = menuItems.find(m => m.id === id);
-                      return <div key={id} className="flex justify-between text-sm"><span className="text-gray-600">{qty} x {item.name}</span><span className="font-medium">฿{item.price * qty}</span></div>;
+                      return <div key={id} className="flex justify-between text-sm"><span className="text-gray-600">{qty} x {item ? item.name : id}</span><span className="font-medium">฿{item ? item.price * qty : 0}</span></div>;
                     })}
                   </div>
                   <div className="flex justify-between items-end pt-3 border-t border-dashed border-gray-200">
