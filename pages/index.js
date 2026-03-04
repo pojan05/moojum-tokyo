@@ -86,7 +86,60 @@ export default function Home() {
     setError('');
     setStep(3);
   };
+// ✅ ใส่ฟังก์ชันนี้ไว้เหนือ handleImageUpload
+const compressImageToDataURL = (file, { maxWidth = 1280, quality = 0.75 } = {}) =>
+  new Promise((resolve, reject) => {
+    try {
+      if (!file || !file.type?.startsWith('image/')) {
+        return reject(new Error('ไฟล์ไม่ใช่รูปภาพ'));
+      }
 
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxWidth / img.width);
+          const w = Math.round(img.width * scale);
+          const h = Math.round(img.height * scale);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+
+          // บีบอัดเป็น JPEG เพื่อลดขนาด base64
+          const out = canvas.toDataURL('image/jpeg', quality);
+          resolve(out);
+        };
+        img.onerror = () => reject(new Error('โหลดรูปไม่สำเร็จ'));
+        img.src = reader.result;
+      };
+
+      reader.readAsDataURL(file);
+    } catch (e) {
+      reject(e);
+    }
+  });
+
+
+// ✅ วางแทน handleImageUpload เดิมทั้งก้อน
+const handleImageUpload = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  setError('');
+  try {
+    // บีบอัดสลิปก่อนส่ง
+    const compressed = await compressImageToDataURL(file, { maxWidth: 1280, quality: 0.75 });
+    setSlipImage(compressed);
+  } catch (err) {
+    console.error(err);
+    setError('อัปโหลดสลิปไม่สำเร็จ กรุณาลองใหม่');
+  }
+};
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
