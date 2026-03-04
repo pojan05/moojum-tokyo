@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   try {
     const { customerInfo, cart, totalPrice, location, slipImageBase64 } = req.body;
 
-    // 1. ดึงข้อมูลเมนูจากฐานข้อมูล เพื่อนำชื่ออาหารมาแสดง
+    // 1. ดึงข้อมูลเมนูจากฐานข้อมูล (ถ้าไม่มีให้ใช้ค่าเริ่มต้น)
     const storeData = await kv.get('storeSettings');
     const defaultMenu = [
       { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)' },
@@ -27,8 +27,8 @@ export default async function handler(req, res) {
       if (item) orderText += `- ${item.name} x ${qty}\n`;
     }
 
-    // สร้างลิงก์ Google Maps จากพิกัด
-    const mapLink = `https://www.google.com/maps?q=${location.lat},${location.lng}`;
+    // สร้างลิงก์ Google Maps จากพิกัดให้กดง่ายๆ
+    const mapLink = `https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`;
 
     // 3. จัดหน้าตาข้อความที่จะส่งเข้า LINE
     const lineMessage = `🚨 มีออเดอร์ใหม่เข้าครับ! 🚨\n\n` +
@@ -38,32 +38,31 @@ export default async function handler(req, res) {
       `จุดสังเกต: ${customerInfo.addressDetail || '-'}\n\n` +
       `📝 รายการอาหาร:\n${orderText}\n` +
       `💰 ยอดโอน: ${totalPrice} บาท\n` +
-      `(ระบบได้รับสลิปเรียบร้อยแล้ว)`;
+      `(ระบบได้รับสลิปเรียบร้อยแล้ว กรุณาเช็คสลิปในเว็บหลังบ้าน)`;
 
     // ==========================================
-    // 🔑 ตั้งค่าคีย์ LINE OA ของคุณที่นี่
+    // 🔑 คีย์ LINE OA ที่คุณให้มา
     // ==========================================
-    const LINE_TOKEN = process.env.LINE_ACCESS_TOKEN || 'Loo6XSt531o9ROy7viys0+hr8B9ObGecih6uq57yjnWkkx29yvr7pnrlvn2nM4EtcSYi3FWxoC0+kYS6E2ekXcpO5imL/7E7OvDgR/GRKlOK0rFuQCu8zrt3h2YY/nVXbqvOd5d6NZ/4FfLvCgIlagdB04t89/1O/w1cDnyilFU=';
-    const LINE_USER_ID = process.env.LINE_USER_ID || 'Ud6d0ed9226ba3154238979aff2f09919';
+    const LINE_TOKEN = 'Loo6XSt531o9ROy7viys0+hr8B9ObGecih6uq57yjnWkkx29yvr7pnrlvn2nM4EtcSYi3FWxoC0+kYS6E2ekXcpO5imL/7E7OvDgR/GRKlOK0rFuQCu8zrt3h2YY/nVXbqvOd5d6NZ/4FfLvCgIlagdB04t89/1O/w1cDnyilFU=';
+    const LINE_USER_ID = 'Ud6d0ed9226ba3154238979aff2f09919';
 
     // 4. ส่งข้อมูลไปที่ LINE API
-    if (LINE_TOKEN !== 'ใส่_CHANNEL_ACCESS_TOKEN_ของ_LINE_OA_ที่นี่') {
-      const response = await fetch('https://api.line.me/v2/bot/message/push', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${LINE_TOKEN}`
-        },
-        body: JSON.stringify({
-          to: LINE_USER_ID,
-          messages: [{ type: 'text', text: lineMessage }]
-        })
-      });
+    const response = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${LINE_TOKEN}`
+      },
+      body: JSON.stringify({
+        to: LINE_USER_ID,
+        messages: [{ type: 'text', text: lineMessage }]
+      })
+    });
 
-      if (!response.ok) {
-        console.error('LINE API Error:', await response.text());
-        return res.status(500).json({ error: 'ไม่สามารถส่งแจ้งเตือน LINE ได้' });
-      }
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('LINE API Error:', errText);
+      return res.status(500).json({ error: 'ไม่สามารถส่งแจ้งเตือน LINE ได้' });
     }
 
     // ส่งข้อความกลับไปบอกหน้าเว็บว่า "สำเร็จ!"
