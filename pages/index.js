@@ -12,14 +12,29 @@ export default function Home() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // เพิ่ม State สำหรับเก็บข้อมูลจาก API
-  const [storeData, setStoreData] = useState(null);
+  // เก็บข้อมูลเมนู
+  const [storeData, setStoreData] = useState({
+    promptPay: '0812345678',
+    menuItems: [
+      { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)', price: 299, image: '🍲', type: 'main', desc: 'หมูสไลด์นุ่มๆ พร้อมผักรวมและน้ำจิ้มรสเด็ด', isAvailable: true },
+      { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)', price: 89, image: '🥩', type: 'addon', isAvailable: true },
+      { id: 'a2', name: 'ชุดผักรวม', price: 49, image: '🥬', type: 'addon', isAvailable: true },
+      { id: 'a3', name: 'ไข่ไก่', price: 10, image: '🥚', type: 'addon', isAvailable: true },
+      { id: 'a4', name: 'วุ้นเส้น', price: 15, image: '🍜', type: 'addon', isAvailable: true },
+    ]
+  });
 
-  // ดึงข้อมูลเมนูและพร้อมเพย์จาก API เมื่อโหลดหน้าเว็บ
+  // พยายามดึงข้อมูลจาก API ถ้ามี (ถ้าไม่มีหรือ Error จะใช้ข้อมูลตั้งต้นด้านบน)
   useEffect(() => {
     fetch('/api/settings')
-      .then(res => res.json())
-      .then(data => setStoreData(data));
+      .then(res => {
+        if (!res.ok) throw new Error('API not ready');
+        return res.json();
+      })
+      .then(data => {
+        if (data && data.menuItems) setStoreData(data);
+      })
+      .catch(err => console.log('กำลังใช้ข้อมูลเมนูตั้งต้น (ออฟไลน์)'));
   }, []);
 
   const updateCart = (id, delta) => {
@@ -35,9 +50,8 @@ export default function Home() {
     });
   };
 
-  // รอให้โหลดข้อมูลเสร็จก่อน ค่อยคำนวณ
-  const menuItems = storeData ? storeData.menuItems : [];
-  const PROMPTPAY_NUMBER = storeData ? storeData.promptPay : '';
+  const menuItems = storeData.menuItems;
+  const PROMPTPAY_NUMBER = storeData.promptPay;
 
   const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
   const totalPrice = Object.entries(cart).reduce((sum, [id, qty]) => {
@@ -102,14 +116,10 @@ export default function Home() {
     }
   };
 
-  // แสดงหน้าจอโหลดระหว่างรอข้อมูลจาก API
-  if (!storeData) return <div className="min-h-screen flex items-center justify-center bg-[#fff9f5]">กำลังโหลดเมนูอาหาร...</div>;
-
   return (
     <>
       <Head>
         <title>หมูจุ่มโตเกียว Delivery</title>
-        <script src="https://cdn.tailwindcss.com"></script>
       </Head>
       <div className="min-h-screen bg-[#fff9f5] font-sans text-gray-800 selection:bg-orange-200">
         <header className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4 shadow-md sticky top-0 z-50 rounded-b-3xl">
