@@ -1,14 +1,21 @@
 import { Redis } from '@upstash/redis';
 
-// เช็คว่า Vercel มีการใส่รหัสผ่านเชื่อมต่อฐานข้อมูล Upstash หรือยัง
-const isDatabaseConnected = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
-const redis = isDatabaseConnected ? Redis.fromEnv() : null;
+// ฉลาดขึ้น: ให้เช็กหาฐานข้อมูลทั้งแบบ Upstash ใหม่ และ Vercel KV เดิม
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+const isDatabaseConnected = !!(redisUrl && redisToken);
+
+// ถ้ามีฐานข้อมูลให้เชื่อมต่อ ถ้าไม่มีให้เป็น null
+const redis = isDatabaseConnected 
+  ? new Redis({ url: redisUrl, token: redisToken }) 
+  : null;
 
 export const config = {
   api: { bodyParser: { sizeLimit: '5mb' } },
 };
 
-// ข้อมูลตั้งต้น (จะถูกเรียกใช้แค่ "ครั้งแรกครั้งเดียวเท่านั้น" ถ้าฐานข้อมูลว่างเปล่า)
+// ข้อมูลตั้งต้น
 const DEFAULT_SETTINGS = {
   promptPay: '0812345678',
   materials: [
@@ -31,35 +38,25 @@ const DEFAULT_SETTINGS = {
   ]
 };
 
-// ตัวแปรสำรอง
 let memorySettings = null;
 
 export default async function handler(req, res) {
-  // -----------------------------------------------------------------
-  // ส่วนที่ 1: ดึงข้อมูล (GET) - จะดึงข้อมูลล่าสุดจากฐานข้อมูลเท่านั้น
-  // -----------------------------------------------------------------
   if (req.method === 'GET') {
     if (redis) {
       try {
         const data = await redis.get('storeSettings');
-        if (data) return res.status(200).json(data); // ส่งค่าล่าสุดจาก Database
+        if (data) return res.status(200).json(data);
       } catch (e) {
         console.error('Redis GET Error:', e);
       }
     }
-    // ถ้าไม่มี Database หรือเป็นเว็บเปิดใหม่ครั้งแรก ให้ส่งค่า Default
     return res.status(200).json(memorySettings || DEFAULT_SETTINGS);
   }
 
-  // -----------------------------------------------------------------
-  // ส่วนที่ 2: บันทึกข้อมูล (POST) - บันทึกทับด้วยค่าที่ส่งมา 100% ห้ามคืนค่า
-  // -----------------------------------------------------------------
   if (req.method === 'POST') {
-    const body = req.body; // รับค่าทั้งหมดที่ส่งมาจากหน้า Admin
-
+    const body = req.body;
     if (redis) {
       try {
-        // บันทึกลงฐานข้อมูลแบบถาวร
         await redis.set('storeSettings', body);
         memorySettings = body;
         return res.status(200).json({ message: 'บันทึกข้อมูลลงฐานข้อมูลถาวรสำเร็จ!' });
@@ -68,10 +65,9 @@ export default async function handler(req, res) {
         return res.status(500).json({ message: 'ระบบฐานข้อมูลขัดข้อง ไม่สามารถบันทึกได้' });
       }
     } else {
-      // **สำคัญมาก** ถ้ายังไม่ได้ต่อ Database ระบบจะแจ้งเตือนให้รู้ทันที
-      memorySettings = body; // บันทึกไว้ในหน่วยความจำชั่วคราวก่อน
+      memorySettings = body;
       return res.status(200).json({ 
-        message: '⚠️ บันทึกสำเร็จ (แต่เป็นความจำชั่วคราว เพราะยังไม่ได้เชื่อมต่อ Upstash Redis ข้อมูลจะหายไปถ้ารีเฟรชเว็บ)' 
+        message: '⚠️ บันทึกสำเร็จ (แต่เป็นความจำชั่วคราว เพราะเว็บมองไม่เห็นรหัสผ่านฐานข้อมูล)' 
       });
     }
   }
