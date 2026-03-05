@@ -32,12 +32,23 @@ export default function Admin() {
 
   const saveSettings = async () => {
     setIsSaving(true);
-    await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    alert('บันทึกข้อมูลเรียบร้อยแล้ว!');
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        alert('✅ ' + result.message);
+      } else {
+        alert('❌ ไม่สามารถบันทึกได้: ' + result.message);
+      }
+    } catch (error) {
+      alert('❌ เกิดข้อผิดพลาดในการเชื่อมต่อ');
+    }
     setIsSaving(false);
   };
 
