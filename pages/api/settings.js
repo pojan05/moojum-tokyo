@@ -1,5 +1,4 @@
-// pages/api/settings.js
-import { createClient } from '@vercel/kv';
+import Redis from 'ioredis';
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
@@ -16,33 +15,36 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
-// ดึงกุญแจฐานข้อมูล (รองรับทั้ง Vercel KV ตัวเก่า และ Vercel Redis ตัวใหม่)
-const apiUrl = process.env.KV_REST_API_URL || process.env.REDIS_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const apiToken = process.env.KV_REST_API_TOKEN || process.env.REDIS_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// ดึง URL จาก Environment Variables ที่ Vercel สร้างให้
+const redisUrl = process.env.REDIS_URL;
 
 // สร้างการเชื่อมต่อฐานข้อมูล
-const db = (apiUrl && apiToken) ? createClient({ url: apiUrl, token: apiToken }) : null;
+const redis = redisUrl ? new Redis(redisUrl) : null;
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
-      if (db) {
-        const data = await db.get('storeSettings');
-        if (data && Array.isArray(data.menuItems)) {
-          return res.status(200).json(data);
+      if (redis) {
+        // ดึงข้อมูลมาแปลงกลับเป็น Object
+        const dataStr = await redis.get('storeSettings');
+        if (dataStr) {
+          const data = JSON.parse(dataStr);
+          if (data && Array.isArray(data.menuItems)) {
+            return res.status(200).json(data);
+          }
         }
       }
       return res.status(200).json(DEFAULT_SETTINGS);
     } catch (e) {
-      console.error('DB GET Error:', e);
+      console.error('Redis GET Error:', e);
       return res.status(200).json(DEFAULT_SETTINGS);
     }
   }
 
   if (req.method === 'POST') {
     try {
-      if (!db) {
-        return res.status(500).json({ message: 'ระบบยังไม่รู้จักฐานข้อมูล (ไม่พบ URL/Token แบบใหม่) กรุณาเช็ค Environment Variables ครับ' });
+      if (!redis) {
+        return res.status(500).json({ message: 'ยังไม่พบ REDIS_URL ใน Environment Variables ครับ' });
       }
 
       const body = req.body || {};
@@ -52,10 +54,11 @@ export default async function handler(req, res) {
         menuItems: Array.isArray(body.menuItems) ? body.menuItems : DEFAULT_SETTINGS.menuItems,
       };
       
-      await db.set('storeSettings', next);
+      // แปลงเป็น String เพื่อบันทึกลงฐานข้อมูล
+      await redis.set('storeSettings', JSON.stringify(next));
       return res.status(200).json({ message: 'บันทึกข้อมูลลงระบบถาวรสำเร็จ!' });
     } catch (e) {
-      console.error('DB SET Error:', e);
+      console.error('Redis SET Error:', e);
       return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกฐานข้อมูล' });
     }
   }
