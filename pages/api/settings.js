@@ -9,11 +9,11 @@ export const config = {
 const DEFAULT_SETTINGS = {
   promptPay: '0812345678',
   menuItems: [
-    { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)', price: 299, image: '🍲', type: 'main', desc: 'หมูสไลด์นุ่มๆ พร้อมผักรวมและน้ำจิ้มรสเด็ด', isAvailable: true },
-    { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)', price: 89, image: '🥩', type: 'addon', isAvailable: true },
-    { id: 'a2', name: 'ชุดผักรวม', price: 49, image: '🥬', type: 'addon', isAvailable: true },
-    { id: 'a3', name: 'ไข่ไก่', price: 10, image: '🥚', type: 'addon', isAvailable: true },
-    { id: 'a4', name: 'วุ้นเส้น', price: 15, image: '🍜', type: 'addon', isAvailable: true },
+    { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)', price: 299, cost: 150, stock: 50, image: '🍲', type: 'main', desc: 'หมูสไลด์นุ่มๆ พร้อมผักรวมและน้ำจิ้มรสเด็ด', isAvailable: true },
+    { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)', price: 89, cost: 40, stock: 100, image: '🥩', type: 'addon', isAvailable: true },
+    { id: 'a2', name: 'ชุดผักรวม', price: 49, cost: 20, stock: 50, image: '🥬', type: 'addon', isAvailable: true },
+    { id: 'a3', name: 'ไข่ไก่', price: 10, cost: 4, stock: 100, image: '🥚', type: 'addon', isAvailable: true },
+    { id: 'a4', name: 'วุ้นเส้น', price: 15, cost: 5, stock: 100, image: '🍜', type: 'addon', isAvailable: true },
   ],
 };
 
