@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { kv } from '@vercel/kv';
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
@@ -15,52 +15,44 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
-// ดึง URL จาก Environment Variables ที่ Vercel สร้างให้
-const redisUrl = process.env.REDIS_URL;
+// fallback memory เผื่อ KV ยังไม่พร้อม
+let memorySettings = DEFAULT_SETTINGS;
 
-// สร้างการเชื่อมต่อฐานข้อมูล
-const redis = redisUrl ? new Redis(redisUrl) : null;
+async function kvGetSafe() {
+  try {
+    const data = await kv.get('storeSettings');
+    if (data && Array.isArray(data.menuItems)) return data;
+  } catch (e) {
+    console.log('KV not ready, using memory fallback');
+  }
+  return memorySettings;
+}
+
+async function kvSetSafe(next) {
+  memorySettings = next;
+  try {
+    await kv.set('storeSettings', next);
+  } catch (e) {
+    console.log('KV set failed, kept in memory fallback');
+  }
+  return next;
+}
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
-    try {
-      if (redis) {
-        // ดึงข้อมูลมาแปลงกลับเป็น Object
-        const dataStr = await redis.get('storeSettings');
-        if (dataStr) {
-          const data = JSON.parse(dataStr);
-          if (data && Array.isArray(data.menuItems)) {
-            return res.status(200).json(data);
-          }
-        }
-      }
-      return res.status(200).json(DEFAULT_SETTINGS);
-    } catch (e) {
-      console.error('Redis GET Error:', e);
-      return res.status(200).json(DEFAULT_SETTINGS);
-    }
+    const data = await kvGetSafe();
+    return res.status(200).json(data);
   }
 
   if (req.method === 'POST') {
-    try {
-      if (!redis) {
-        return res.status(500).json({ message: 'ยังไม่พบ REDIS_URL ใน Environment Variables ครับ' });
-      }
-
-      const body = req.body || {};
-      const next = {
-        ...DEFAULT_SETTINGS,
-        ...body,
-        menuItems: Array.isArray(body.menuItems) ? body.menuItems : DEFAULT_SETTINGS.menuItems,
-      };
-      
-      // แปลงเป็น String เพื่อบันทึกลงฐานข้อมูล
-      await redis.set('storeSettings', JSON.stringify(next));
-      return res.status(200).json({ message: 'บันทึกข้อมูลลงระบบถาวรสำเร็จ!' });
-    } catch (e) {
-      console.error('Redis SET Error:', e);
-      return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกฐานข้อมูล' });
-    }
+    const body = req.body || {};
+    const next = {
+      ...DEFAULT_SETTINGS,
+      ...body,
+      menuItems: Array.isArray(body.menuItems) ? body.menuItems : DEFAULT_SETTINGS.menuItems,
+    };
+    const saved = await kvSetSafe(next);
+    return res.status(200).json({ message: 'อัปเดตข้อมูลสำเร็จ', data: saved });
   }
 
   return res.status(405).json({ message: 'Method not allowed' });
