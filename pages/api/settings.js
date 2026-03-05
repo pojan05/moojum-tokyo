@@ -15,44 +15,43 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
-// fallback memory เผื่อ KV ยังไม่พร้อม
-let memorySettings = DEFAULT_SETTINGS;
-
-async function kvGetSafe() {
-  try {
-    const data = await kv.get('storeSettings');
-    if (data && Array.isArray(data.menuItems)) return data;
-  } catch (e) {
-    console.log('KV not ready, using memory fallback');
-  }
-  return memorySettings;
-}
-
-async function kvSetSafe(next) {
-  memorySettings = next;
-  try {
-    await kv.set('storeSettings', next);
-  } catch (e) {
-    console.log('KV set failed, kept in memory fallback');
-  }
-  return next;
-}
-
 export default async function handler(req, res) {
   if (req.method === 'GET') {
-    const data = await kvGetSafe();
-    return res.status(200).json(data);
+    try {
+      const data = await kv.get('storeSettings');
+      // ถ้ามีข้อมูลในฐานข้อมูลให้ใช้ข้อมูลนั้น
+      if (data && Array.isArray(data.menuItems)) {
+        return res.status(200).json(data);
+      }
+      // ถ้าฐานข้อมูลว่างเปล่า ให้ส่งค่าเริ่มต้นไป
+      return res.status(200).json(DEFAULT_SETTINGS);
+    } catch (e) {
+      console.error('KV GET Error:', e);
+      return res.status(200).json(DEFAULT_SETTINGS);
+    }
   }
 
   if (req.method === 'POST') {
-    const body = req.body || {};
-    const next = {
-      ...DEFAULT_SETTINGS,
-      ...body,
-      menuItems: Array.isArray(body.menuItems) ? body.menuItems : DEFAULT_SETTINGS.menuItems,
-    };
-    const saved = await kvSetSafe(next);
-    return res.status(200).json({ message: 'อัปเดตข้อมูลสำเร็จ', data: saved });
+    try {
+      // ตรวจสอบว่า Vercel ส่งกุญแจฐานข้อมูลมาให้หรือยัง
+      if (!process.env.KV_REST_API_URL) {
+        return res.status(500).json({ message: 'ระบบยังไม่รู้จักฐานข้อมูล กรุณากด Redeploy ใน Vercel 1 ครั้งครับ' });
+      }
+
+      const body = req.body || {};
+      const next = {
+        ...DEFAULT_SETTINGS,
+        ...body,
+        menuItems: Array.isArray(body.menuItems) ? body.menuItems : DEFAULT_SETTINGS.menuItems,
+      };
+      
+      // บันทึกลงฐานข้อมูลจริง
+      await kv.set('storeSettings', next);
+      return res.status(200).json({ message: 'บันทึกข้อมูลลงระบบถาวรสำเร็จ!' });
+    } catch (e) {
+      console.error('KV SET Error:', e);
+      return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกฐานข้อมูล' });
+    }
   }
 
   return res.status(405).json({ message: 'Method not allowed' });
