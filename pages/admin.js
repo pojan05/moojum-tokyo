@@ -6,26 +6,25 @@ export default function Admin() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ดึงข้อมูลเมื่อเปิดหน้าเว็บ
   useEffect(() => {
     fetch('/api/settings')
       .then(res => res.json())
       .then(fetchedData => {
-        setData(fetchedData);
+        // จัดการกรณีของเก่าไม่มีฟิลด์ cost และ stock
+        const updatedMenuItems = fetchedData.menuItems.map(item => ({
+          ...item,
+          cost: item.cost || 0,
+          stock: item.stock || 0
+        }));
+        setData({ ...fetchedData, menuItems: updatedMenuItems });
         setIsLoading(false);
       });
   }, []);
 
-  const handlePriceChange = (id, newPrice) => {
+  // ฟังก์ชันเดียวจัดการแก้ไขได้ทั้ง ราคา, ต้นทุน, สต๊อก และ สถานะเปิด/ปิด
+  const handleItemChange = (id, field, value) => {
     const updatedMenu = data.menuItems.map(item => 
-      item.id === id ? { ...item, price: Number(newPrice) } : item
-    );
-    setData({ ...data, menuItems: updatedMenu });
-  };
-
-  const toggleAvailability = (id) => {
-    const updatedMenu = data.menuItems.map(item => 
-      item.id === id ? { ...item, isAvailable: !item.isAvailable } : item
+      item.id === id ? { ...item, [field]: field === 'isAvailable' ? value : Number(value) } : item
     );
     setData({ ...data, menuItems: updatedMenu });
   };
@@ -52,7 +51,7 @@ export default function Admin() {
     setIsSaving(false);
   };
 
-  if (isLoading) return <div className="p-10 text-center">กำลังโหลดข้อมูล...</div>;
+  if (isLoading) return <div className="p-10 text-center text-gray-600">กำลังโหลดข้อมูลหลังร้าน...</div>;
 
   return (
     <>
@@ -62,55 +61,79 @@ export default function Admin() {
       </Head>
       <div className="min-h-screen bg-gray-50 p-6 font-sans">
         <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-sm">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex justify-between items-center mb-6 border-b pb-4">
             <h1 className="text-2xl font-bold text-gray-800">⚙️ ระบบจัดการหลังร้าน</h1>
             <button 
               onClick={saveSettings} 
               disabled={isSaving}
-              className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-400"
+              className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-400 shadow-sm transition-all"
             >
               {isSaving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
             </button>
           </div>
 
-          <section className="mb-8">
-            <h2 className="text-lg font-bold mb-2">ตั้งค่าการชำระเงิน</h2>
-            <label className="block text-sm text-gray-600 mb-1">เบอร์พร้อมเพย์รับเงิน</label>
+          <section className="mb-8 bg-orange-50 p-4 rounded-xl border border-orange-100">
+            <h2 className="text-lg font-bold mb-2 text-orange-800">ตั้งค่าการชำระเงิน</h2>
+            <label className="block text-sm text-gray-700 mb-1 font-medium">เบอร์พร้อมเพย์รับเงิน</label>
             <input 
               type="text" 
               value={data.promptPay} 
               onChange={(e) => setData({...data, promptPay: e.target.value})}
-              className="w-full p-3 border rounded-lg max-w-sm"
+              className="w-full p-3 border border-orange-200 rounded-lg max-w-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </section>
 
           <section>
-            <h2 className="text-lg font-bold mb-4">จัดการเมนูอาหาร</h2>
+            <h2 className="text-lg font-bold mb-4 text-gray-800">จัดการเมนู สต๊อก และต้นทุน</h2>
             <div className="space-y-4">
               {data.menuItems.map(item => (
-                <div key={item.id} className={`flex items-center justify-between p-4 border rounded-xl ${!item.isAvailable ? 'bg-gray-100 opacity-60' : ''}`}>
-                  <div className="flex items-center gap-3 w-1/2">
-                    <span className="text-2xl">{item.image}</span>
-                    <span className="font-medium">{item.name}</span>
-                  </div>
+                <div key={item.id} className={`flex flex-col p-4 border border-gray-200 rounded-xl transition-all ${!item.isAvailable ? 'bg-gray-50 opacity-70 grayscale-[30%]' : 'bg-white shadow-sm'}`}>
                   
-                  <div className="flex items-center gap-4 w-1/2 justify-end">
-                    <div className="flex items-center gap-2">
-                      <span>฿</span>
-                      <input 
-                        type="number" 
-                        value={item.price} 
-                        onChange={(e) => handlePriceChange(item.id, e.target.value)}
-                        className="w-20 p-2 border rounded-md text-center"
-                      />
+                  {/* ส่วนหัว: ชื่อเมนู และ ปุ่มเปิด/ปิด */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{item.image}</span>
+                      <span className="font-bold text-gray-800 text-lg">{item.name}</span>
                     </div>
                     <button 
-                      onClick={() => toggleAvailability(item.id)}
-                      className={`px-4 py-2 rounded-lg text-sm font-bold w-24 ${item.isAvailable ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}
+                      onClick={() => handleItemChange(item.id, 'isAvailable', !item.isAvailable)}
+                      className={`px-4 py-1.5 rounded-lg text-sm font-bold w-28 text-center ${item.isAvailable ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-blue-100 text-blue-600 hover:bg-blue-200'}`}
                     >
                       {item.isAvailable ? 'ปิดการขาย' : 'เปิดการขาย'}
                     </button>
                   </div>
+                  
+                  {/* ส่วนข้อมูล: ราคา, ต้นทุน, สต๊อก */}
+                  <div className="grid grid-cols-3 gap-3 bg-gray-50 p-3 rounded-lg border border-gray-100 mt-2">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1 block">ราคาขาย (฿)</label>
+                      <input 
+                        type="number" 
+                        value={item.price} 
+                        onChange={(e) => handleItemChange(item.id, 'price', e.target.value)}
+                        className="w-full p-2 border rounded-md text-center focus:outline-none focus:border-orange-500 font-medium text-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1 block">ต้นทุน (฿)</label>
+                      <input 
+                        type="number" 
+                        value={item.cost} 
+                        onChange={(e) => handleItemChange(item.id, 'cost', e.target.value)}
+                        className="w-full p-2 border rounded-md text-center focus:outline-none focus:border-orange-500 font-medium text-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1 block text-blue-600">สต๊อกคงเหลือ</label>
+                      <input 
+                        type="number" 
+                        value={item.stock} 
+                        onChange={(e) => handleItemChange(item.id, 'stock', e.target.value)}
+                        className="w-full p-2 border border-blue-200 rounded-md text-center focus:outline-none focus:border-blue-500 font-bold text-blue-700 bg-white"
+                      />
+                    </div>
+                  </div>
+
                 </div>
               ))}
             </div>
