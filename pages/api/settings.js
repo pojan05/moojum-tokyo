@@ -1,4 +1,6 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv();
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
@@ -15,32 +17,31 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
-// fallback memory เผื่อ KV ยังไม่พร้อม
 let memorySettings = DEFAULT_SETTINGS;
 
-async function kvGetSafe() {
+async function redisGetSafe() {
   try {
-    const data = await kv.get('storeSettings');
+    const data = await redis.get('storeSettings');
     if (data && Array.isArray(data.menuItems)) return data;
   } catch (e) {
-    console.log('KV not ready, using memory fallback');
+    console.log('Redis not ready, using memory fallback');
   }
   return memorySettings;
 }
 
-async function kvSetSafe(next) {
+async function redisSetSafe(next) {
   memorySettings = next;
   try {
-    await kv.set('storeSettings', next);
+    await redis.set('storeSettings', next);
   } catch (e) {
-    console.log('KV set failed, kept in memory fallback');
+    console.log('Redis set failed, kept in memory fallback');
   }
   return next;
 }
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
-    const data = await kvGetSafe();
+    const data = await redisGetSafe();
     return res.status(200).json(data);
   }
 
@@ -51,7 +52,7 @@ export default async function handler(req, res) {
       ...body,
       menuItems: Array.isArray(body.menuItems) ? body.menuItems : DEFAULT_SETTINGS.menuItems,
     };
-    const saved = await kvSetSafe(next);
+    const saved = await redisSetSafe(next);
     return res.status(200).json({ message: 'อัปเดตข้อมูลสำเร็จ', data: saved });
   }
 
