@@ -6,7 +6,7 @@ export default function Admin() {
   const [data, setData] = useState({ promptPay: '', materials: [], menuItems: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('menu'); // เริ่มต้นที่หน้าเมนู
+  const [activeTab, setActiveTab] = useState('menu');
 
   useEffect(() => {
     fetch('/api/settings')
@@ -33,7 +33,9 @@ export default function Admin() {
     setIsSaving(false);
   };
 
-  // จัดการวัตถุดิบ (Inventory)
+  // -----------------------------------------
+  // 1. ฟังก์ชันจัดการคลังวัตถุดิบ (Inventory)
+  // -----------------------------------------
   const handleMaterialChange = (id, field, value) => {
     const updated = data.materials.map(m => m.id === id ? { ...m, [field]: field === 'name' || field === 'unit' ? value : Number(value) } : m);
     setData({ ...data, materials: updated });
@@ -45,12 +47,14 @@ export default function Admin() {
   };
 
   const deleteMaterial = (id) => {
-    if(confirm('ลบวัตถุดิบนี้?')) {
+    if(confirm('ลบวัตถุดิบนี้? (เมนูที่ผูกสูตรไว้อาจได้รับผลกระทบ)')) {
       setData({ ...data, materials: data.materials.filter(m => m.id !== id) });
     }
   };
 
-  // จัดการเมนู (Menu)
+  // -----------------------------------------
+  // 2. ฟังก์ชันจัดการเมนูหลัก (Menu)
+  // -----------------------------------------
   const handleMenuChange = (id, field, value) => {
     const updatedMenu = data.menuItems.map(item =>
       item.id === id ? { ...item, [field]: field === 'price' ? Number(value) : value } : item
@@ -58,7 +62,38 @@ export default function Admin() {
     setData({ ...data, menuItems: updatedMenu });
   };
 
-  // คำนวณต้นทุนรวมของแต่ละเมนู
+  // -----------------------------------------
+  // 3. ฟังก์ชันจัดการสูตรอาหาร (Recipe / BOM)
+  // -----------------------------------------
+  const handleRecipeChange = (menuId, matId, newQty) => {
+    const qty = Number(newQty);
+    const updatedMenu = data.menuItems.map(item => {
+      if (item.id === menuId) {
+        const newRecipe = { ...(item.recipe || {}) };
+        if (qty <= 0) {
+          delete newRecipe[matId]; // ถ้าใส่เลข 0 หรือติดลบ ให้ลบทิ้ง
+        } else {
+          newRecipe[matId] = qty;
+        }
+        return { ...item, recipe: newRecipe };
+      }
+      return item;
+    });
+    setData({ ...data, menuItems: updatedMenu });
+  };
+
+  const handleAddMaterialToRecipe = (menuId, matId) => {
+    if (!matId) return;
+    const updatedMenu = data.menuItems.map(item => {
+      if (item.id === menuId) {
+        const newRecipe = { ...(item.recipe || {}), [matId]: 1 }; // ค่าเริ่มต้นคือ 1
+        return { ...item, recipe: newRecipe };
+      }
+      return item;
+    });
+    setData({ ...data, menuItems: updatedMenu });
+  };
+
   const calculateMenuCost = (recipe) => {
     if (!recipe) return 0;
     let totalCost = 0;
@@ -102,7 +137,6 @@ export default function Admin() {
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
           <div className="max-w-4xl mx-auto">
             
-            {/* Header Area */}
             <div className="flex justify-between items-center mb-8 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100">
               <div>
                 <h1 className="text-2xl font-bold text-slate-800">
@@ -129,7 +163,6 @@ export default function Admin() {
                           <div>
                             <h3 className="text-xl font-bold text-slate-800">{item.name}</h3>
                             <div className="flex flex-wrap gap-4 mt-2 text-sm items-center">
-                              {/* ช่องสำหรับแก้ไขราคาขาย */}
                               <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-lg font-medium">
                                 ราคาขาย: ฿
                                 <input 
@@ -139,8 +172,8 @@ export default function Admin() {
                                   className="w-16 bg-white border border-green-300 rounded px-1 py-0.5 text-center text-green-800 focus:outline-none focus:ring-1 focus:ring-green-500"
                                 />
                               </div>
-                              <span className="bg-red-50 border border-red-100 text-red-700 px-3 py-1.5 rounded-lg font-medium">ต้นทุนรวม: ฿{menuCost}</span>
-                              <span className="bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-medium">กำไร: ฿{profit}</span>
+                              <span className="bg-red-50 border border-red-100 text-red-700 px-3 py-1.5 rounded-lg font-medium">ต้นทุนรวม: ฿{menuCost.toLocaleString()}</span>
+                              <span className="bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-medium">กำไร: ฿{profit.toLocaleString()}</span>
                             </div>
                           </div>
                         </div>
@@ -152,21 +185,53 @@ export default function Admin() {
                         </button>
                       </div>
 
-                      {/* Recipe (สูตรอาหาร) */}
+                      {/* Recipe (สูตรอาหาร) - ส่วนที่แก้ไขใหม่ ให้ตั้งค่าได้ */}
                       <div className="mt-4 pt-4 border-t border-slate-100">
-                        <p className="text-sm font-bold text-slate-500 mb-3">📦 วัตถุดิบที่ใช้ใน 1 การขาย (ผูกสูตรตัดสต๊อก)</p>
-                        <div className="flex flex-wrap gap-2">
+                        <p className="text-sm font-bold text-slate-500 mb-3 flex items-center gap-2">
+                          <Package size={16}/> วัตถุดิบที่ใช้ตัดสต๊อกต่อ 1 การขาย (ผูกสูตร)
+                        </p>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {/* รายการวัตถุดิบเดิมที่มีอยู่ */}
                           {item.recipe && Object.entries(item.recipe).map(([matId, qty]) => {
                             const matInfo = data.materials.find(m => m.id === matId);
                             if(!matInfo) return null;
                             return (
-                              <div key={matId} className="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
+                              <div key={matId} className="bg-slate-50 border border-slate-200 pl-3 pr-1.5 py-1.5 rounded-lg text-sm flex items-center gap-2 group hover:border-orange-200 transition-colors">
                                 <span className="font-medium text-slate-700">{matInfo.name}</span>
-                                <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold">{qty} {matInfo.unit}</span>
+                                <input 
+                                  type="number" 
+                                  min="0"
+                                  value={qty}
+                                  onChange={(e) => handleRecipeChange(item.id, matId, e.target.value)}
+                                  className="w-12 bg-white border border-slate-300 rounded px-1 text-center font-bold text-slate-800 focus:outline-none focus:border-orange-500"
+                                />
+                                <span className="text-slate-500 text-xs">{matInfo.unit}</span>
+                                <button 
+                                  onClick={() => handleRecipeChange(item.id, matId, 0)} 
+                                  className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                                  title="ลบวัตถุดิบนี้"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </div>
                             );
                           })}
-                          <div className="text-xs text-slate-400 p-2">*การแก้ไขสูตร กรุณาแจ้งผู้พัฒนาระบบ</div>
+
+                          {/* Dropdown สำหรับเพิ่มวัตถุดิบใหม่เข้าสูตร */}
+                          <select 
+                            onChange={(e) => {
+                              handleAddMaterialToRecipe(item.id, e.target.value);
+                              e.target.value = ""; // รีเซ็ตค่าหลังจากเลือกเสร็จ
+                            }}
+                            className="bg-white border border-dashed border-slate-300 text-slate-600 font-medium text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer hover:bg-slate-50"
+                            defaultValue=""
+                          >
+                            <option value="" disabled>+ เพิ่มวัตถุดิบ</option>
+                            {/* แสดงเฉพาะวัตถุดิบที่ยังไม่ได้อยู่ในสูตรของเมนูนี้ */}
+                            {data.materials.filter(m => !item.recipe || !item.recipe[m.id]).map(m => (
+                              <option key={m.id} value={m.id}>{m.name}</option>
+                            ))}
+                          </select>
                         </div>
                       </div>
                     </div>
@@ -214,8 +279,6 @@ export default function Admin() {
             {/* TAB 3: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
-                
-                {/* ตั้งค่า PromptPay ย้ายมาไว้หน้านี้ */}
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
                   <div>
                     <h3 className="font-bold text-slate-800 text-lg">💳 เบอร์พร้อมเพย์รับเงิน</h3>
