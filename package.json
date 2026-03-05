@@ -11,6 +11,6 @@
     "react": "latest",
     "react-dom": "latest",
     "lucide-react": "latest",
-    "@vercel/kv": "latest"
+    "@upstash/redis": "latest"
   }
 }
