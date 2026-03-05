@@ -1,4 +1,3 @@
-// pages/api/send-order.js
 export const config = {
   api: {
     bodyParser: { sizeLimit: '10mb' },
@@ -15,7 +14,6 @@ export default async function handler(req, res) {
     const location = body.location || null;
     const slipImageUrl = body.slipImageUrl || '';
 
-    // เช็คข้อมูลพื้นฐาน
     const name = String(customerInfo.name || '').trim();
     const phone = String(customerInfo.phone || '').replace(/\D/g, '');
 
@@ -28,13 +26,12 @@ export default async function handler(req, res) {
     const LINE_USER_ID = (process.env.LINE_USER_ID || '').trim();
 
     if (!LINE_TOKEN || !LINE_USER_ID) {
-      return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า LINE_TOKEN ใน Vercel' });
+      return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า LINE_TOKEN หรือ LINE_USER_ID ใน Vercel' });
     }
 
-    // สร้างลิงก์เปิดแผนที่ Google Maps โดยตรง
-    const mapLink = `https://maps.google.com/?q=${location.lat},${location.lng}`;
+    // แก้ไขลิงก์ Google Maps เป็นรูปแบบที่ถูกต้อง
+    const mapLink = `https://www.google.com/maps?q=${location.lat},${location.lng}`;
 
-    // ดึงชื่อเมนูภาษาไทยที่ส่งมาจากหน้าบ้านมาต่อกัน
     let orderText = '';
     for (const item of orderDetails) {
       if (item.qty > 0) orderText += `- ${item.name} x ${item.qty}\n`;
@@ -47,10 +44,9 @@ export default async function handler(req, res) {
     const msg = `🚨 มีออเดอร์ใหม่! 🚨\n\n👤 ลูกค้า: ${name}\n📞 โทร: ${phone}\n📍 พิกัด: ${mapLink}\n🧭 จุดสังเกต: ${addressDetail}\n\n📝 รายการ:\n${orderText}\n\n💰 ยอดโอน: ${totalPrice} บาท`;
 
     const messages = [
-      { type: 'text', text: msg } // ส่งข้อความออเดอร์
+      { type: 'text', text: msg }
     ];
 
-    // ถ้ามี URL สลิป ให้ส่งเป็นรูปภาพเข้าไปในแชทด้วย
     if (slipImageUrl) {
       messages.push({
         type: 'image',
@@ -59,7 +55,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // ยิงเข้า LINE
     const lineRes = await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: {
