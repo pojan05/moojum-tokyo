@@ -1,4 +1,5 @@
-import { kv } from '@vercel/kv';
+// pages/api/settings.js
+import { createClient } from '@vercel/kv';
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
@@ -15,27 +16,33 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
+// ดึงกุญแจฐานข้อมูล (รองรับทั้ง Vercel KV ตัวเก่า และ Vercel Redis ตัวใหม่)
+const apiUrl = process.env.KV_REST_API_URL || process.env.REDIS_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const apiToken = process.env.KV_REST_API_TOKEN || process.env.REDIS_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+
+// สร้างการเชื่อมต่อฐานข้อมูล
+const db = (apiUrl && apiToken) ? createClient({ url: apiUrl, token: apiToken }) : null;
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
-      const data = await kv.get('storeSettings');
-      // ถ้ามีข้อมูลในฐานข้อมูลให้ใช้ข้อมูลนั้น
-      if (data && Array.isArray(data.menuItems)) {
-        return res.status(200).json(data);
+      if (db) {
+        const data = await db.get('storeSettings');
+        if (data && Array.isArray(data.menuItems)) {
+          return res.status(200).json(data);
+        }
       }
-      // ถ้าฐานข้อมูลว่างเปล่า ให้ส่งค่าเริ่มต้นไป
       return res.status(200).json(DEFAULT_SETTINGS);
     } catch (e) {
-      console.error('KV GET Error:', e);
+      console.error('DB GET Error:', e);
       return res.status(200).json(DEFAULT_SETTINGS);
     }
   }
 
   if (req.method === 'POST') {
     try {
-      // ตรวจสอบว่า Vercel ส่งกุญแจฐานข้อมูลมาให้หรือยัง
-      if (!process.env.KV_REST_API_URL) {
-        return res.status(500).json({ message: 'ระบบยังไม่รู้จักฐานข้อมูล กรุณากด Redeploy ใน Vercel 1 ครั้งครับ' });
+      if (!db) {
+        return res.status(500).json({ message: 'ระบบยังไม่รู้จักฐานข้อมูล (ไม่พบ URL/Token แบบใหม่) กรุณาเช็ค Environment Variables ครับ' });
       }
 
       const body = req.body || {};
@@ -45,11 +52,10 @@ export default async function handler(req, res) {
         menuItems: Array.isArray(body.menuItems) ? body.menuItems : DEFAULT_SETTINGS.menuItems,
       };
       
-      // บันทึกลงฐานข้อมูลจริง
-      await kv.set('storeSettings', next);
+      await db.set('storeSettings', next);
       return res.status(200).json({ message: 'บันทึกข้อมูลลงระบบถาวรสำเร็จ!' });
     } catch (e) {
-      console.error('KV SET Error:', e);
+      console.error('DB SET Error:', e);
       return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกฐานข้อมูล' });
     }
   }
