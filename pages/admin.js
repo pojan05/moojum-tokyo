@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, Setting } from 'lucide-react';
+import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save } from 'lucide-react';
 
 export default function Admin() {
   const [data, setData] = useState({ promptPay: '', materials: [], menuItems: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('inventory'); // 'menu', 'inventory', 'dashboard'
+  const [activeTab, setActiveTab] = useState('menu'); // เริ่มต้นที่หน้าเมนู
 
   useEffect(() => {
     fetch('/api/settings')
@@ -50,6 +50,14 @@ export default function Admin() {
     }
   };
 
+  // จัดการเมนู (Menu)
+  const handleMenuChange = (id, field, value) => {
+    const updatedMenu = data.menuItems.map(item =>
+      item.id === id ? { ...item, [field]: field === 'price' ? Number(value) : value } : item
+    );
+    setData({ ...data, menuItems: updatedMenu });
+  };
+
   // คำนวณต้นทุนรวมของแต่ละเมนู
   const calculateMenuCost = (recipe) => {
     if (!recipe) return 0;
@@ -78,13 +86,13 @@ export default function Admin() {
             Moojum Admin
           </div>
           <nav className="flex-1 p-4 flex flex-row md:flex-col gap-2 overflow-x-auto">
-            <button onClick={() => setActiveTab('inventory')} className={`flex items-center gap-3 p-3 rounded-lg font-medium transition-colors ${activeTab === 'inventory' ? 'bg-orange-600 text-white shadow-md' : 'hover:bg-slate-800'}`}>
+            <button onClick={() => setActiveTab('menu')} className={`flex items-center gap-3 p-3 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'menu' ? 'bg-orange-600 text-white shadow-md' : 'hover:bg-slate-800'}`}>
+              <Utensils size={20} /> เมนู & ผูกสูตร
+            </button>
+            <button onClick={() => setActiveTab('inventory')} className={`flex items-center gap-3 p-3 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'inventory' ? 'bg-orange-600 text-white shadow-md' : 'hover:bg-slate-800'}`}>
               <Package size={20} /> คลังวัตถุดิบ
             </button>
-            <button onClick={() => setActiveTab('menu')} className={`flex items-center gap-3 p-3 rounded-lg font-medium transition-colors ${activeTab === 'menu' ? 'bg-orange-600 text-white shadow-md' : 'hover:bg-slate-800'}`}>
-              <Utensils size={20} /> เมนู & สูตร
-            </button>
-            <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-3 p-3 rounded-lg font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-orange-600 text-white shadow-md' : 'hover:bg-slate-800'}`}>
+            <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-3 p-3 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-orange-600 text-white shadow-md' : 'hover:bg-slate-800'}`}>
               <LayoutDashboard size={20} /> สรุปยอด (Dashboard)
             </button>
           </nav>
@@ -107,43 +115,7 @@ export default function Admin() {
               </button>
             </div>
 
-            {/* TAB 1: INVENTORY */}
-            {activeTab === 'inventory' && (
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                  <h2 className="text-lg font-bold text-slate-800">รายการวัตถุดิบทั้งหมด</h2>
-                  <button onClick={addMaterial} className="text-sm bg-orange-100 text-orange-700 px-4 py-2 rounded-lg font-bold flex items-center gap-1 hover:bg-orange-200">
-                    <Plus size={16} /> เพิ่มวัตถุดิบ
-                  </button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-600 font-medium">
-                      <tr>
-                        <th className="p-4">ชื่อวัตถุดิบ/สินค้า</th>
-                        <th className="p-4 w-24">หน่วย</th>
-                        <th className="p-4 w-32">ต้นทุน/หน่วย (฿)</th>
-                        <th className="p-4 w-32 text-blue-600">สต๊อกคงเหลือ</th>
-                        <th className="p-4 w-16 text-center">ลบ</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {data.materials.map(mat => (
-                        <tr key={mat.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-4"><input type="text" value={mat.name} onChange={(e) => handleMaterialChange(mat.id, 'name', e.target.value)} className="w-full bg-transparent font-medium text-slate-800 focus:outline-none focus:border-b-2 focus:border-orange-500"/></td>
-                          <td className="p-4"><input type="text" value={mat.unit} onChange={(e) => handleMaterialChange(mat.id, 'unit', e.target.value)} className="w-full bg-transparent text-slate-500 focus:outline-none"/></td>
-                          <td className="p-4"><input type="number" value={mat.cost} onChange={(e) => handleMaterialChange(mat.id, 'cost', e.target.value)} className="w-full bg-white border border-slate-200 p-2 rounded-lg text-center focus:outline-none focus:border-orange-500"/></td>
-                          <td className="p-4"><input type="number" value={mat.stock} onChange={(e) => handleMaterialChange(mat.id, 'stock', e.target.value)} className="w-full bg-blue-50 border border-blue-200 p-2 rounded-lg text-center font-bold text-blue-700 focus:outline-none focus:border-blue-500"/></td>
-                          <td className="p-4 text-center"><button onClick={() => deleteMaterial(mat.id)} className="text-red-400 hover:text-red-600 p-2"><Trash2 size={18} /></button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: MENU & RECIPE */}
+            {/* TAB 1: MENU & RECIPE */}
             {activeTab === 'menu' && (
               <div className="space-y-6">
                 {data.menuItems.map(item => {
@@ -156,18 +128,24 @@ export default function Admin() {
                           <div className="text-4xl bg-slate-100 w-16 h-16 flex items-center justify-center rounded-2xl">{item.image}</div>
                           <div>
                             <h3 className="text-xl font-bold text-slate-800">{item.name}</h3>
-                            <div className="flex gap-4 mt-2 text-sm">
-                              <span className="bg-green-100 text-green-700 px-2 py-1 rounded font-medium">ราคาขาย: ฿{item.price}</span>
-                              <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-medium">ต้นทุนรวม: ฿{menuCost}</span>
-                              <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">กำไร: ฿{profit}</span>
+                            <div className="flex flex-wrap gap-4 mt-2 text-sm items-center">
+                              {/* ช่องสำหรับแก้ไขราคาขาย */}
+                              <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-lg font-medium">
+                                ราคาขาย: ฿
+                                <input 
+                                  type="number" 
+                                  value={item.price} 
+                                  onChange={(e) => handleMenuChange(item.id, 'price', e.target.value)}
+                                  className="w-16 bg-white border border-green-300 rounded px-1 py-0.5 text-center text-green-800 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                />
+                              </div>
+                              <span className="bg-red-50 border border-red-100 text-red-700 px-3 py-1.5 rounded-lg font-medium">ต้นทุนรวม: ฿{menuCost}</span>
+                              <span className="bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-medium">กำไร: ฿{profit}</span>
                             </div>
                           </div>
                         </div>
                         <button 
-                          onClick={() => {
-                            const updatedMenu = data.menuItems.map(m => m.id === item.id ? { ...m, isAvailable: !m.isAvailable } : m);
-                            setData({ ...data, menuItems: updatedMenu });
-                          }}
+                          onClick={() => handleMenuChange(item.id, 'isAvailable', !item.isAvailable)}
                           className={`px-4 py-2 rounded-xl text-sm font-bold shadow-sm ${item.isAvailable ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                         >
                           {item.isAvailable ? 'เปิดขายอยู่ (กดเพื่อปิด)' : 'ปิดการขาย (กดเพื่อเปิด)'}
@@ -197,13 +175,67 @@ export default function Admin() {
               </div>
             )}
 
+            {/* TAB 2: INVENTORY */}
+            {activeTab === 'inventory' && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <h2 className="text-lg font-bold text-slate-800">รายการวัตถุดิบทั้งหมด</h2>
+                  <button onClick={addMaterial} className="text-sm bg-orange-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-1 hover:bg-orange-700 shadow-sm">
+                    <Plus size={16} /> เพิ่มวัตถุดิบ
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white text-slate-500 font-medium border-b border-slate-200">
+                      <tr>
+                        <th className="p-4">ชื่อวัตถุดิบ/สินค้า</th>
+                        <th className="p-4 w-24">หน่วย</th>
+                        <th className="p-4 w-32">ต้นทุน/หน่วย (฿)</th>
+                        <th className="p-4 w-32 text-blue-600">สต๊อกคงเหลือ</th>
+                        <th className="p-4 w-16 text-center">ลบ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {data.materials.map(mat => (
+                        <tr key={mat.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4"><input type="text" value={mat.name} onChange={(e) => handleMaterialChange(mat.id, 'name', e.target.value)} className="w-full bg-transparent font-bold text-slate-700 focus:outline-none focus:border-b-2 focus:border-orange-500"/></td>
+                          <td className="p-4"><input type="text" value={mat.unit} onChange={(e) => handleMaterialChange(mat.id, 'unit', e.target.value)} className="w-full bg-transparent text-slate-500 focus:outline-none"/></td>
+                          <td className="p-4"><input type="number" value={mat.cost} onChange={(e) => handleMaterialChange(mat.id, 'cost', e.target.value)} className="w-full bg-white border border-slate-200 p-2 rounded-lg text-center focus:outline-none focus:border-orange-500"/></td>
+                          <td className="p-4"><input type="number" value={mat.stock} onChange={(e) => handleMaterialChange(mat.id, 'stock', e.target.value)} className="w-full bg-blue-50 border border-blue-200 p-2 rounded-lg text-center font-bold text-blue-700 focus:outline-none focus:border-blue-500"/></td>
+                          <td className="p-4 text-center"><button onClick={() => deleteMaterial(mat.id)} className="text-red-400 hover:text-red-600 p-2"><Trash2 size={18} /></button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* TAB 3: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
+                
+                {/* ตั้งค่า PromptPay ย้ายมาไว้หน้านี้ */}
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-lg">💳 เบอร์พร้อมเพย์รับเงิน</h3>
+                    <p className="text-sm text-slate-500">เบอร์ที่จะนำไปสร้าง QR Code ให้ลูกค้าสแกนจ่ายเงินหน้าเว็บ</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 font-medium">PromptPay:</span>
+                    <input 
+                      type="text" 
+                      value={data.promptPay} 
+                      onChange={(e) => setData({...data, promptPay: e.target.value})}
+                      className="border border-slate-300 p-2.5 rounded-lg w-48 text-center font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-6 rounded-2xl shadow-sm text-white">
                     <p className="text-green-100 font-medium mb-1">รายรับวันนี้</p>
-                    <h3 className="text-4xl font-bold">฿0 <span className="text-sm font-normal opacity-80">(รอเชื่อมต่อออเดอร์)</span></h3>
+                    <h3 className="text-4xl font-bold">฿0 <span className="text-sm font-normal opacity-80">(รอเชื่อมต่อ)</span></h3>
                   </div>
                   <div className="bg-gradient-to-br from-red-500 to-rose-600 p-6 rounded-2xl shadow-sm text-white">
                     <p className="text-red-100 font-medium mb-1">ต้นทุนวัตถุดิบวันนี้</p>
