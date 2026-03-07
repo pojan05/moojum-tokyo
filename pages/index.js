@@ -183,7 +183,7 @@ export default function Home() {
                 <div className="grid grid-cols-2 gap-3">
                   {menuItems.filter(m => m.type === 'addon').map(item => (
                     <div key={item.id} className={`bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center text-center relative ${!item.isAvailable ? 'opacity-60 grayscale' : ''}`}>
-                      <div className="w-16 h-16 mb-3 flex items-center justify-center text-5xl bg-transparent rounded-full overflow-hidden">{item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}</div>
+                     <div className="w-16 h-16 mb-3 flex items-center justify-center text-5xl bg-transparent rounded-full overflow-hidden">{item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}</div>
                       <h3 className="font-bold text-sm text-slate-700 leading-tight mb-1">{item.name}</h3>
                       <span className="text-orange-600 font-black text-sm mb-4">+฿{item.price}</span>
                       
