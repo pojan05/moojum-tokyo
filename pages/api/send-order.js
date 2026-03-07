@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 
+// ดึงรหัสผ่านฐานข้อมูล (REDIS_URL)
 const redisUrl = process.env.REDIS_URL;
 const redis = redisUrl ? new Redis(redisUrl) : null;
 
@@ -21,7 +22,6 @@ export default async function handler(req, res) {
     let updatedMaterials = [...settings.materials];
     let orderCost = 0;
 
-    // ระบบแอบตัดสต๊อกและคำนวณกำไร
     for (const item of orderDetails) {
       const menu = settings.menuItems.find(m => m.name === item.name);
       if (menu && menu.recipe) {
@@ -36,10 +36,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // บันทึกจำนวนสต๊อกที่ลดลงแล้ว กลับเข้าฐานข้อมูล
     await redis.set('storeSettings', JSON.stringify({ ...settings, materials: updatedMaterials }));
 
-    // บันทึกยอดขายเพื่อนำไปโชว์ใน Dashboard
     const today = new Date().toISOString().split('T')[0];
     const saleData = {
       time: new Date().toLocaleTimeString('th-TH'),
@@ -51,7 +49,6 @@ export default async function handler(req, res) {
     };
     await redis.lpush(`sales:${today}`, JSON.stringify(saleData));
 
-    // ส่งแจ้งเตือน LINE (พร้อมลิงก์แผนที่แบบกดนำทางได้เลย)
     const LINE_TOKEN = (process.env.LINE_TOKEN || '').trim();
     const LINE_USER_ID = (process.env.LINE_USER_ID || '').trim();
     const mapLink = `https://maps.google.com/?q=${location.lat},${location.lng}`;
