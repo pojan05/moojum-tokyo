@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag } from 'lucide-react';
+import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut } from 'lucide-react';
 
 export default function Admin() {
+  // --- สถานะสำหรับการล็อคอิน ---
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passcode, setPasscode] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  // --- สถานะข้อมูลหลังร้าน ---
   const [data, setData] = useState({ 
     promptPay: '', materials: [], menuItems: [], 
     delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
@@ -12,14 +18,45 @@ export default function Admin() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('menu');
 
+  // ตรวจสอบสถานะการล็อคอินเมื่อเปิดหน้าเว็บ
   useEffect(() => {
+    const auth = localStorage.getItem('moojum_admin_auth');
+    if (auth === 'true') {
+      setIsAuthenticated(true);
+      fetchData(); // ดึงข้อมูลเฉพาะตอนที่ล็อคอินผ่านแล้ว
+    } else {
+      setIsLoading(false); // ปิดสถานะโหลดเพื่อโชว์หน้าล็อคอิน
+    }
+  }, []);
+
+  const fetchData = () => {
+    setIsLoading(true);
     fetch('/api/settings')
       .then(res => res.json())
       .then(fetchedData => {
         setData(fetchedData);
         setIsLoading(false);
       });
-  }, []);
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (passcode === 'AB5541') {
+      localStorage.setItem('moojum_admin_auth', 'true');
+      setIsAuthenticated(true);
+      setAuthError('');
+      fetchData(); // รหัสผ่านถูกต้อง ให้เริ่มดึงข้อมูล
+    } else {
+      setAuthError('รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('moojum_admin_auth');
+    setIsAuthenticated(false);
+    setPasscode('');
+    setData({ promptPay: '', materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
+  };
 
   const saveSettings = async () => {
     setIsSaving(true);
@@ -105,8 +142,40 @@ export default function Admin() {
     if(confirm('ลบโค้ดส่วนลดนี้?')) setData({ ...data, discountCodes: data.discountCodes.filter(c => c.id !== id) });
   };
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500 font-medium">กำลังโหลดข้อมูลหลังร้าน...</div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500 font-medium">กำลังโหลดข้อมูล...</div>;
 
+  // --- หน้าจอสำหรับ Login ---
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
+        <Head><title>Login - หมูจุ่มโตเกียว</title><script src="https://cdn.tailwindcss.com"></script></Head>
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-slate-200 text-center">
+          <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Lock size={36} />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Moojum Admin</h2>
+          <p className="text-slate-500 text-sm mb-8">กรุณาใส่รหัสผ่านเพื่อเข้าจัดการหลังร้าน</p>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <input 
+                type="password" 
+                value={passcode} 
+                onChange={(e) => setPasscode(e.target.value)} 
+                placeholder="รหัสผ่าน" 
+                className="w-full p-4 border border-slate-300 rounded-xl text-center text-xl tracking-[0.3em] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              />
+            </div>
+            {authError && <p className="text-red-500 text-sm font-medium">{authError}</p>}
+            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-lg hover:bg-slate-800 transition-colors shadow-md">
+              เข้าสู่ระบบ
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // --- หน้าจอ Admin หลัก (เมื่อล็อคอินผ่านแล้ว) ---
   return (
     <>
       <Head>
@@ -135,6 +204,12 @@ export default function Admin() {
               <LayoutDashboard size={20} /> สรุปยอด (Dashboard)
             </button>
           </nav>
+          {/* ปุ่มออกจากระบบ */}
+          <div className="p-4 mt-auto border-t border-slate-800">
+            <button onClick={handleLogout} className="flex items-center justify-center gap-2 w-full p-3 bg-slate-800 text-slate-400 rounded-lg hover:bg-slate-700 hover:text-white transition-colors">
+              <LogOut size={18} /> ออกจากระบบ
+            </button>
+          </div>
         </div>
 
         {/* Main Content */}
@@ -152,7 +227,7 @@ export default function Admin() {
               </button>
             </div>
 
-            {/* TAB 1: MENU & RECIPE (เหมือนเดิม) */}
+            {/* TAB 1: MENU & RECIPE */}
             {activeTab === 'menu' && (
               <div className="space-y-6">
                 {data.menuItems.map(item => {
@@ -206,7 +281,7 @@ export default function Admin() {
               </div>
             )}
 
-            {/* TAB 2: INVENTORY (เหมือนเดิม) */}
+            {/* TAB 2: INVENTORY */}
             {activeTab === 'inventory' && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -234,11 +309,9 @@ export default function Admin() {
               </div>
             )}
 
-            {/* TAB 3: NEW! DELIVERY & PROMO */}
+            {/* TAB 3: DELIVERY & PROMO */}
             {activeTab === 'delivery' && (
               <div className="space-y-6">
-                
-                {/* พิกัดร้านและค่าส่ง */}
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><MapPin className="text-orange-500"/> ตั้งค่าพิกัดร้านและอัตราค่าส่ง</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
@@ -249,9 +322,6 @@ export default function Admin() {
                     <div>
                       <label className="text-sm font-bold text-slate-600 block mb-1">ลองจิจูด (Longitude) ร้านค้า</label>
                       <input type="number" value={data.delivery.storeLng} onChange={(e) => handleDeliveryChange('storeLng', e.target.value)} className="w-full p-2.5 border rounded-lg focus:outline-none focus:border-orange-500"/>
-                    </div>
-                    <div className="md:col-span-2 text-sm text-slate-500 flex items-center gap-1">
-                      💡 วิธีหาพิกัด: เปิด Google Maps ค้นหาร้านคุณ คลิ๊กขวาที่จุดร้านค้า จะมีตัวเลขพิกัดโผล่ขึ้นมาให้ก๊อปปี้มาใส่ได้เลย
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-orange-50 p-4 rounded-xl border border-orange-100">
@@ -270,7 +340,6 @@ export default function Admin() {
                   </div>
                 </div>
 
-                {/* โค้ดส่วนลด */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Tag className="text-blue-500"/> โค้ดส่วนลดค่าจัดส่ง</h3>
@@ -307,11 +376,10 @@ export default function Admin() {
                     )}
                   </div>
                 </div>
-
               </div>
             )}
 
-            {/* TAB 4: DASHBOARD (เหมือนเดิม) */}
+            {/* TAB 4: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
