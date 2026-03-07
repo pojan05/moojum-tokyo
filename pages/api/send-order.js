@@ -1,81 +1,73 @@
-export const config = {
-  api: {
-    bodyParser: { sizeLimit: '10mb' },
-  },
-};
+import Redis from 'ioredis';
+
+const redisUrl = process.env.REDIS_URL;
+const redis = redisUrl ? new Redis(redisUrl) : null;
+
+export const config = { api: { bodyParser: { sizeLimit: '10mb' } } };
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
     const body = req.body || {};
-    const customerInfo = body.customerInfo || {};
-    const orderDetails = body.orderDetails || [];
-    const location = body.location || null;
-    const slipImageUrl = body.slipImageUrl || '';
+    const { customerInfo, orderDetails, totalPrice, location, slipImageUrl } = body;
 
-    const name = String(customerInfo.name || '').trim();
-    const phone = String(customerInfo.phone || '').replace(/\D/g, '');
+    if (!redis) return res.status(500).json({ error: 'ฐานข้อมูลยังไม่ได้เชื่อมต่อ (REDIS_URL)' });
 
-    if (!name) return res.status(400).json({ error: 'กรุณากรอกชื่อผู้รับ' });
-    if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง' });
-    if (!location || location.lat == null) return res.status(400).json({ error: 'กรุณาแชร์ตำแหน่งที่ตั้ง' });
-    if (orderDetails.length === 0) return res.status(400).json({ error: 'ตะกร้าว่าง' });
+    const settingsStr = await redis.get('storeSettings');
+    if (!settingsStr) return res.status(500).json({ error: 'ไม่พบข้อมูลการตั้งค่าร้านค้า' });
+    
+    const settings = JSON.parse(settingsStr);
+    let updatedMaterials = [...settings.materials];
+    let orderCost = 0;
 
+    // ระบบแอบตัดสต๊อกและคำนวณกำไร
+    for (const item of orderDetails) {
+      const menu = settings.menuItems.find(m => m.name === item.name);
+      if (menu && menu.recipe) {
+        Object.entries(menu.recipe).forEach(([matId, qtyPerUnit]) => {
+          const totalQtyToDeduct = qtyPerUnit * item.qty;
+          const matIndex = updatedMaterials.findIndex(m => m.id === matId);
+          if (matIndex !== -1) {
+            updatedMaterials[matIndex].stock -= totalQtyToDeduct;
+            orderCost += (updatedMaterials[matIndex].cost * totalQtyToDeduct);
+          }
+        });
+      }
+    }
+
+    // บันทึกจำนวนสต๊อกที่ลดลงแล้ว กลับเข้าฐานข้อมูล
+    await redis.set('storeSettings', JSON.stringify({ ...settings, materials: updatedMaterials }));
+
+    // บันทึกยอดขายเพื่อนำไปโชว์ใน Dashboard
+    const today = new Date().toISOString().split('T')[0];
+    const saleData = {
+      time: new Date().toLocaleTimeString('th-TH'),
+      customer: customerInfo.name,
+      total: totalPrice,
+      cost: orderCost,
+      profit: totalPrice - orderCost,
+      items: orderDetails
+    };
+    await redis.lpush(`sales:${today}`, JSON.stringify(saleData));
+
+    // ส่งแจ้งเตือน LINE (พร้อมลิงก์แผนที่แบบกดนำทางได้เลย)
     const LINE_TOKEN = (process.env.LINE_TOKEN || '').trim();
     const LINE_USER_ID = (process.env.LINE_USER_ID || '').trim();
+    const mapLink = `https://maps.google.com/?q=${location.lat},${location.lng}`;
+    
+    let orderText = orderDetails.map(i => `- ${i.name} x ${i.qty}`).join('\n');
+    const msg = `🚨 ออเดอร์ใหม่ (ตัดสต๊อกแล้ว) 🚨\n\n👤 ลูกค้า: ${customerInfo.name}\n📞 โทร: ${customerInfo.phone}\n📍 พิกัด: ${mapLink}\n🧭 จุดสังเกต: ${customerInfo.addressDetail || '-'}\n\n📝 รายการ:\n${orderText}\n\n💰 ยอดโอน: ${totalPrice} บาท\n📈 กำไรออเดอร์นี้: ${saleData.profit} บาท`;
 
-    if (!LINE_TOKEN || !LINE_USER_ID) {
-      return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า LINE_TOKEN หรือ LINE_USER_ID ใน Vercel' });
-    }
-
-    // แก้ไขลิงก์ Google Maps เป็นรูปแบบที่ถูกต้อง
-    const mapLink = `https://www.google.com/maps?q=${location.lat},${location.lng}`;
-
-    let orderText = '';
-    for (const item of orderDetails) {
-      if (item.qty > 0) orderText += `- ${item.name} x ${item.qty}\n`;
-    }
-    orderText = orderText.trim() || '-';
-
-    const addressDetail = String(customerInfo.addressDetail || '').trim() || '-';
-    const totalPrice = Number(body.totalPrice || 0);
-
-    const msg = `🚨 มีออเดอร์ใหม่! 🚨\n\n👤 ลูกค้า: ${name}\n📞 โทร: ${phone}\n📍 พิกัด: ${mapLink}\n🧭 จุดสังเกต: ${addressDetail}\n\n📝 รายการ:\n${orderText}\n\n💰 ยอดโอน: ${totalPrice} บาท`;
-
-    const messages = [
-      { type: 'text', text: msg }
-    ];
-
-    if (slipImageUrl) {
-      messages.push({
-        type: 'image',
-        originalContentUrl: slipImageUrl,
-        previewImageUrl: slipImageUrl
-      });
-    }
-
-    const lineRes = await fetch('https://api.line.me/v2/bot/message/push', {
+    await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${LINE_TOKEN}`,
-      },
-      body: JSON.stringify({
-        to: LINE_USER_ID,
-        messages: messages
-      })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}` },
+      body: JSON.stringify({ to: LINE_USER_ID, messages: [{ type: 'text', text: msg }, { type: 'image', originalContentUrl: slipImageUrl, previewImageUrl: slipImageUrl }] })
     });
-
-    if (!lineRes.ok) {
-      const errText = await lineRes.text();
-      console.error('LINE PUSH FAIL:', errText);
-      return res.status(502).json({ error: 'ส่งแจ้งเตือน LINE ไม่สำเร็จ' });
-    }
 
     return res.status(200).json({ success: true });
   } catch (e) {
-    console.error('FATAL ERROR:', e);
-    return res.status(500).json({ error: 'ระบบเซิร์ฟเวอร์ขัดข้อง' });
+    console.error('ERROR:', e);
+    return res.status(500).json({ error: 'ระบบขัดข้อง แต่คุณอาจได้รับแจ้งเตือน LINE แล้ว' });
   }
 }
