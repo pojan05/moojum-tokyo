@@ -126,6 +126,27 @@ export default function Admin() {
     return totalCost;
   };
 
+  // --- ฟังก์ชันเพิ่ม/ลบเมนูใหม่ (เพิ่มเข้ามาใหม่) ---
+  const addMenuItem = () => {
+    const newItem = { 
+      id: `menu_${Date.now()}`, 
+      name: 'พิมพ์ชื่อเมนูใหม่...', 
+      desc: '', 
+      price: 0, 
+      image: '🍲', 
+      type: 'main', // 'main' = เมนูหลัก, 'addon' = สั่งเพิ่ม
+      isAvailable: true, 
+      recipe: {} 
+    };
+    setData({ ...data, menuItems: [...data.menuItems, newItem] });
+  };
+
+  const deleteMenuItem = (id) => {
+    if(confirm('ต้องการลบเมนูนี้ใช่หรือไม่?')) {
+      setData({ ...data, menuItems: data.menuItems.filter(m => m.id !== id) });
+    }
+  };
+
   // --- ฟังก์ชันจัดการระบบ Delivery & โค้ดส่วนลด ---
   const handleDeliveryChange = (field, value) => {
     setData({ ...data, delivery: { ...data.delivery, [field]: Number(value) } });
@@ -230,17 +251,58 @@ export default function Admin() {
             {/* TAB 1: MENU & RECIPE */}
             {activeTab === 'menu' && (
               <div className="space-y-6">
+                
+                {/* ปุ่มเพิ่มเมนูใหม่ */}
+                <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <h2 className="font-bold text-slate-700">รายการเมนูทั้งหมด</h2>
+                  <button onClick={addMenuItem} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-orange-700 shadow-sm transition-all">
+                    <Plus size={18} /> เพิ่มเมนูใหม่
+                  </button>
+                </div>
+
                 {data.menuItems.map(item => {
                   const menuCost = calculateMenuCost(item.recipe);
                   const profit = item.price - menuCost;
                   return (
                     <div key={item.id} className={`bg-white rounded-2xl p-6 shadow-sm border ${item.isAvailable ? 'border-orange-100' : 'border-slate-200 bg-slate-50 opacity-80'}`}>
                       <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center gap-4">
-                          <div className="text-4xl bg-slate-100 w-16 h-16 flex items-center justify-center rounded-2xl">{item.image}</div>
-                          <div>
-                            <h3 className="text-xl font-bold text-slate-800">{item.name}</h3>
-                            <div className="flex flex-wrap gap-4 mt-2 text-sm items-center">
+                        <div className="flex gap-4 w-full">
+                          {/* ช่องใส่อีโมจิ/รูป */}
+                          <input 
+                            type="text" 
+                            value={item.image || ''} 
+                            onChange={(e) => handleMenuChange(item.id, 'image', e.target.value)} 
+                            className="text-4xl bg-slate-100 w-16 h-16 flex items-center justify-center rounded-2xl text-center focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer shrink-0" 
+                            title="ใส่อีโมจิหรือรูป"
+                          />
+                          <div className="flex-1">
+                            {/* ช่องใส่ชื่อเมนู */}
+                            <input 
+                              type="text" 
+                              value={item.name} 
+                              onChange={(e) => handleMenuChange(item.id, 'name', e.target.value)} 
+                              className="text-xl font-bold text-slate-800 bg-transparent border-b border-dashed border-slate-300 focus:border-orange-500 outline-none w-full mb-1" 
+                              placeholder="ชื่อเมนู" 
+                            />
+                            {/* ช่องใส่คำอธิบาย */}
+                            <input 
+                              type="text" 
+                              value={item.desc || ''} 
+                              onChange={(e) => handleMenuChange(item.id, 'desc', e.target.value)} 
+                              className="text-sm text-slate-500 bg-transparent border-b border-dashed border-slate-300 focus:border-orange-500 outline-none w-full mb-2 placeholder:text-slate-300" 
+                              placeholder="รายละเอียดเมนู (ถ้ามี)" 
+                            />
+                            {/* เลือกหมวดหมู่ */}
+                            <select 
+                              value={item.type || 'main'} 
+                              onChange={(e) => handleMenuChange(item.id, 'type', e.target.value)} 
+                              className="text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 rounded-lg px-2 py-1 outline-none mb-3"
+                            >
+                              <option value="main">หมวด: เมนูหลัก (แสดงหน้าแรก)</option>
+                              <option value="addon">หมวด: สั่งเพิ่มความอร่อย (Add-on)</option>
+                            </select>
+
+                            <div className="flex flex-wrap gap-4 mt-1 text-sm items-center">
                               <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-lg font-medium">
                                 ราคาขาย: ฿ <input type="number" value={item.price} onChange={(e) => handleMenuChange(item.id, 'price', e.target.value)} className="w-16 bg-white border border-green-300 rounded px-1 py-0.5 text-center text-green-800 focus:outline-none focus:ring-1 focus:ring-green-500" />
                               </div>
@@ -249,9 +311,15 @@ export default function Admin() {
                             </div>
                           </div>
                         </div>
-                        <button onClick={() => handleMenuChange(item.id, 'isAvailable', !item.isAvailable)} className={`px-4 py-2 rounded-xl text-sm font-bold shadow-sm ${item.isAvailable ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-                          {item.isAvailable ? 'เปิดขายอยู่ (กดเพื่อปิด)' : 'ปิดการขาย (กดเพื่อเปิด)'}
-                        </button>
+                        
+                        <div className="flex flex-col gap-2 items-end ml-4 shrink-0">
+                          <button onClick={() => handleMenuChange(item.id, 'isAvailable', !item.isAvailable)} className={`px-4 py-2 rounded-xl text-sm font-bold shadow-sm w-full ${item.isAvailable ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                            {item.isAvailable ? 'เปิดขาย (กดปิด)' : 'ปิดขาย (กดเปิด)'}
+                          </button>
+                          <button onClick={() => deleteMenuItem(item.id)} className="text-red-400 hover:text-red-600 text-sm font-bold flex items-center gap-1 p-1">
+                            <Trash2 size={16}/> ลบเมนู
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-4 pt-4 border-t border-slate-100">
