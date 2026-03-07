@@ -159,7 +159,10 @@ export default function Home() {
                 <h2 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2"><Utensils className="text-orange-500" size={22} /> เมนูหลัก</h2>
                 {menuItems.filter(m => m.type === 'main' && m.isAvailable).map(item => (
                   <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4 mb-4 active:scale-[0.98] transition-transform">
-                    <div className="w-28 h-28 bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl flex items-center justify-center text-6xl shrink-0 shadow-inner overflow-hidden">{item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}</div>
+                    {/* จุดที่ 1 แก้ไขการแสดงผลรูปภาพ/อีโมจิ */}
+                    <div className="w-28 h-28 bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl flex items-center justify-center text-6xl shrink-0 shadow-inner overflow-hidden">
+                      {item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}
+                    </div>
                     <div className="flex-1 flex flex-col justify-between py-1">
                       <div>
                         <h3 className="font-bold text-slate-800 text-base leading-tight">{item.name}</h3>
@@ -183,7 +186,10 @@ export default function Home() {
                 <div className="grid grid-cols-2 gap-3">
                   {menuItems.filter(m => m.type === 'addon').map(item => (
                     <div key={item.id} className={`bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center text-center relative ${!item.isAvailable ? 'opacity-60 grayscale' : ''}`}>
-                     <div className="w-16 h-16 mb-3 flex items-center justify-center text-5xl bg-transparent rounded-full overflow-hidden">{item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}</div>
+                      {/* จุดที่ 2 แก้ไขการแสดงผลรูปภาพ/อีโมจิ */}
+                      <div className="w-16 h-16 mb-3 flex items-center justify-center text-5xl bg-transparent rounded-full overflow-hidden">
+                        {item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}
+                      </div>
                       <h3 className="font-bold text-sm text-slate-700 leading-tight mb-1">{item.name}</h3>
                       <span className="text-orange-600 font-black text-sm mb-4">+฿{item.price}</span>
                       
