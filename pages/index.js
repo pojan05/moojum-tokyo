@@ -1,7 +1,6 @@
-// pages/index.js
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map } from 'lucide-react';
+import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map, Ticket } from 'lucide-react';
 
 export default function Home() {
   const [step, setStep] = useState(1);
@@ -13,27 +12,27 @@ export default function Home() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // สถานะใหม่สำหรับระบบจัดส่ง
+  const [distanceKm, setDistanceKm] = useState(0);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [discountInput, setDiscountInput] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState(null);
+  const [discountError, setDiscountError] = useState('');
+  
   const [storeData, setStoreData] = useState({
     promptPay: '0812345678',
-    menuItems: [
-      { id: 'm1', name: 'เซ็ตหมูจุ่ม (ชุดใหญ่)', price: 299, image: '🍲', type: 'main', desc: 'หมูสไลด์นุ่มๆ พร้อมผักรวมและน้ำจิ้มรสเด็ด', isAvailable: true },
-      { id: 'a1', name: 'หมูสไลด์ (ถาดเพิ่ม)', price: 89, image: '🥩', type: 'addon', isAvailable: true },
-      { id: 'a2', name: 'ชุดผักรวม', price: 49, image: '🥬', type: 'addon', isAvailable: true },
-      { id: 'a3', name: 'ไข่ไก่', price: 10, image: '🥚', type: 'addon', isAvailable: true },
-      { id: 'a4', name: 'วุ้นเส้น', price: 15, image: '🍜', type: 'addon', isAvailable: true },
-    ]
+    delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
+    discountCodes: [],
+    menuItems: []
   });
 
   useEffect(() => {
     fetch('/api/settings')
-      .then(res => {
-        if (!res.ok) throw new Error('API not ready');
-        return res.json();
-      })
+      .then(res => res.json())
       .then(data => {
-        if (data && data.menuItems) setStoreData(data);
+        if (data) setStoreData(data);
       })
-      .catch(err => console.log('กำลังใช้ข้อมูลเมนูตั้งต้น'));
+      .catch(err => console.log('กำลังใช้ข้อมูลตั้งต้น'));
   }, []);
 
   const updateCart = (id, delta) => {
@@ -49,13 +48,16 @@ export default function Home() {
     });
   };
 
-  const menuItems = storeData.menuItems;
-  const PROMPTPAY_NUMBER = storeData.promptPay;
-  const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
-  const totalPrice = Object.entries(cart).reduce((sum, [id, qty]) => {
-    const item = menuItems.find(m => m.id === id);
-    return sum + (item ? item.price * qty : 0);
-  }, 0);
+  // สูตรคำนวณระยะทาง (Haversine Formula) แบบเส้นตรง
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // รัศมีโลก (กิโลเมตร)
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
 
   const getLocation = () => {
     setIsLocating(true);
@@ -67,7 +69,26 @@ export default function Home() {
     }
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+        setLocation({ lat: userLat, lng: userLng });
+        
+        // คำนวณระยะทางและค่าส่ง
+        const storeLat = storeData.delivery?.storeLat || 0;
+        const storeLng = storeData.delivery?.storeLng || 0;
+        const baseFee = storeData.delivery?.baseFee || 0;
+        const ratePerKm = storeData.delivery?.ratePerKm || 0;
+        
+        // ถ้าเจ้าของร้านตั้งพิกัดแล้ว ให้คำนวณ
+        if (storeLat !== 0 && storeLng !== 0) {
+          const dist = calculateDistance(storeLat, storeLng, userLat, userLng);
+          setDistanceKm(dist);
+          setDeliveryFee(Math.ceil(baseFee + (dist * ratePerKm)));
+        } else {
+          setDistanceKm(0);
+          setDeliveryFee(baseFee); // ถ้ายังไม่ตั้งพิกัด ให้คิดแค่ค่าส่งเริ่มต้น
+        }
+        
         setIsLocating(false);
       },
       (err) => {
@@ -76,6 +97,32 @@ export default function Home() {
       }
     );
   };
+
+  const handleApplyDiscount = () => {
+    if (!discountInput.trim()) return;
+    const codeObj = storeData.discountCodes?.find(c => c.code === discountInput.toUpperCase() && c.isActive);
+    
+    if (codeObj) {
+      setAppliedDiscount(codeObj);
+      setDiscountError('');
+    } else {
+      setAppliedDiscount(null);
+      setDiscountError('โค้ดส่วนลดไม่ถูกต้อง หรือหมดอายุแล้ว');
+    }
+  };
+
+  const menuItems = storeData.menuItems || [];
+  const PROMPTPAY_NUMBER = storeData.promptPay;
+  const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
+  
+  // คำนวณยอดเงินรวม
+  const totalFoodPrice = Object.entries(cart).reduce((sum, [id, qty]) => {
+    const item = menuItems.find(m => m.id === id);
+    return sum + (item ? item.price * qty : 0);
+  }, 0);
+  
+  const discountAmount = appliedDiscount ? Math.floor((deliveryFee * appliedDiscount.percent) / 100) : 0;
+  const finalTotalPrice = totalFoodPrice + deliveryFee - discountAmount;
 
   const handleProceedToPayment = () => {
     if (!customerInfo.name.trim()) return setError('กรุณากรอกชื่อผู้รับ');
@@ -100,13 +147,19 @@ export default function Home() {
     setError('');
     
     try {
-      // 1. แปลงรหัสเมนูเป็นชื่อภาษาไทยให้เรียบร้อยก่อนส่งไปเซิร์ฟเวอร์
       const orderDetails = Object.entries(cart).map(([id, qty]) => {
         const item = menuItems.find(m => m.id === id);
         return { name: item ? item.name : id, qty: qty };
       });
 
-      // 2. อัปโหลดสลิปไปที่ ImgBB
+      // แอบใส่ค่าส่งและส่วนลดเข้าไปในบิลด้วย (เพื่อให้ไปโชว์ใน LINE)
+      if (deliveryFee > 0) {
+        orderDetails.push({ name: `🛵 ค่าจัดส่ง (${distanceKm.toFixed(1)} กม.)`, qty: 1 });
+      }
+      if (appliedDiscount) {
+        orderDetails.push({ name: `🎟️ ส่วนลดค่าส่ง (-${appliedDiscount.percent}%)`, qty: 1 });
+      }
+
       const base64Data = slipImage.split(',')[1];
       const formData = new FormData();
       formData.append('image', base64Data);
@@ -117,21 +170,17 @@ export default function Home() {
         body: formData
       });
       const imgData = await imgRes.json();
-
-      if (!imgData.success) {
-        throw new Error('ไม่สามารถอัปโหลดรูปสลิปได้');
-      }
+      if (!imgData.success) throw new Error('ไม่สามารถอัปโหลดรูปสลิปได้');
       
       const slipUrl = imgData.data.url;
 
-      // 3. ส่งข้อมูลออเดอร์พร้อม URL สลิปไปให้หลังบ้าน
       const response = await fetch('/api/send-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           customerInfo, 
-          orderDetails, // ส่งชื่อภาษาไทยไปแทน
-          totalPrice, 
+          orderDetails, 
+          totalPrice: finalTotalPrice, 
           location, 
           slipImageUrl: slipUrl 
         })
@@ -142,7 +191,6 @@ export default function Home() {
       else setError(data.error || 'ไม่สามารถส่งคำสั่งซื้อได้');
       
     } catch (err) {
-      console.error(err);
       setError('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย หรืออัปโหลดรูปไม่สำเร็จ');
     } finally {
       setIsSubmitting(false);
@@ -165,12 +213,12 @@ export default function Home() {
                 </div>
               </div>
               {step > 1 && (
-                <button onClick={() => setStep(step - 1)} className="text-sm bg-white/20 px-3 py-1 rounded-full">ย้อนกลับ</button>
+                <button onClick={() => setStep(step - 1)} className="text-sm bg-white/20 px-3 py-1 rounded-full hover:bg-white/30 transition-colors">ย้อนกลับ</button>
               )}
             </div>
           </header>
 
-          <main className="max-w-md mx-auto p-4 pb-24">
+          <main className="max-w-md mx-auto p-4 pb-28">
             {step < 4 && (
               <div className="flex justify-between items-center mb-6 px-4">
                 {[1, 2, 3].map(s => (
@@ -185,6 +233,7 @@ export default function Home() {
               </div>
             )}
 
+            {/* Step 1: เลือกเมนู */}
             {step === 1 && (
               <div className="space-y-6">
                 <section>
@@ -227,7 +276,7 @@ export default function Home() {
                             <button onClick={() => updateCart(item.id, 1)} className="w-7 h-7 rounded-full bg-orange-500 text-white shadow-sm flex items-center justify-center"><Plus size={14} /></button>
                           </div>
                         ) : (
-                          <button onClick={() => updateCart(item.id, 1)} className="w-full py-1.5 bg-orange-100 text-orange-700 rounded-full text-sm font-medium">เพิ่ม</button>
+                          <button onClick={() => updateCart(item.id, 1)} className="w-full py-1.5 bg-orange-100 text-orange-700 rounded-full text-sm font-medium hover:bg-orange-200">เพิ่ม</button>
                         )}
                       </div>
                     ))}
@@ -236,6 +285,7 @@ export default function Home() {
               </div>
             )}
 
+            {/* Step 2: ข้อมูลจัดส่ง */}
             {step === 2 && (
               <div className="space-y-4">
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100">
@@ -245,30 +295,33 @@ export default function Home() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อผู้รับ <span className="text-red-500">*</span></label>
                       <div className="relative">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input type="text" className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" placeholder="เช่น คุณสมชาย" value={customerInfo.name} onChange={e => setCustomerInfo({...customerInfo, name: e.target.value})} />
+                        <input type="text" className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="เช่น คุณสมชาย" value={customerInfo.name} onChange={e => setCustomerInfo({...customerInfo, name: e.target.value})} />
                       </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">เบอร์โทรศัพท์ (10 หลัก) <span className="text-red-500">*</span></label>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input type="tel" maxLength="10" className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" placeholder="0812345678" value={customerInfo.phone} onChange={e => setCustomerInfo({...customerInfo, phone: e.target.value.replace(/\D/g, '')})} />
+                        <input type="tel" maxLength="10" className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="0812345678" value={customerInfo.phone} onChange={e => setCustomerInfo({...customerInfo, phone: e.target.value.replace(/\D/g, '')})} />
                       </div>
                     </div>
                     <div className="pt-2">
                       <label className="block text-sm font-medium text-gray-700 mb-2">ตำแหน่งจัดส่ง <span className="text-red-500">*</span></label>
                       {!location ? (
-                        <button onClick={getLocation} disabled={isLocating} className="w-full py-4 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl font-medium flex flex-col items-center gap-2"><Map size={24} />{isLocating ? 'กำลังหาพิกัด...' : 'กดเพื่อแชร์ตำแหน่งปัจจุบัน'}</button>
+                        <button onClick={getLocation} disabled={isLocating} className="w-full py-4 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl font-medium flex flex-col items-center gap-2 hover:bg-blue-100 transition-colors"><Map size={24} />{isLocating ? 'กำลังหาพิกัด...' : 'กดเพื่อแชร์ตำแหน่งปัจจุบัน'}</button>
                       ) : (
                         <div className="w-full py-3 px-4 bg-green-50 border border-green-200 rounded-xl flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-green-700"><CheckCircle size={20} /><span className="font-medium text-sm">รับพิกัดสำเร็จเรียบร้อย</span></div>
-                          <button onClick={getLocation} className="text-xs text-green-600 underline">อัปเดตใหม่</button>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2 text-green-700"><CheckCircle size={18} /><span className="font-bold text-sm">รับพิกัดสำเร็จ</span></div>
+                            <span className="text-xs font-medium text-green-600 mt-1 pl-6">ระยะทาง {distanceKm.toFixed(1)} กม. | ค่าส่ง ฿{deliveryFee}</span>
+                          </div>
+                          <button onClick={getLocation} className="text-xs font-bold text-green-600 bg-green-200 px-3 py-1.5 rounded-lg hover:bg-green-300">อัปเดตใหม่</button>
                         </div>
                       )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">รายละเอียดจุดสังเกต (ถ้ามี)</label>
-                      <textarea className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl resize-none h-20" placeholder="เช่น ตึก A ชั้น 5" value={customerInfo.addressDetail} onChange={e => setCustomerInfo({...customerInfo, addressDetail: e.target.value})} />
+                      <textarea className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl resize-none h-20 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="เช่น ตึก A ชั้น 5" value={customerInfo.addressDetail} onChange={e => setCustomerInfo({...customerInfo, addressDetail: e.target.value})} />
                     </div>
                   </div>
                 </div>
@@ -276,34 +329,68 @@ export default function Home() {
               </div>
             )}
 
+            {/* Step 3: ชำระเงิน */}
             {step === 3 && (
               <div className="space-y-4">
+                
+                {/* กล่องใส่โค้ดส่วนลด */}
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                  <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><Ticket size={16} className="text-blue-500"/> โค้ดส่วนลดค่าจัดส่ง</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="กรอกโค้ดที่นี่" 
+                      value={discountInput} 
+                      onChange={e => setDiscountInput(e.target.value.toUpperCase())} 
+                      className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase font-bold text-blue-700"
+                    />
+                    <button onClick={handleApplyDiscount} className="bg-slate-800 text-white px-5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-colors">ใช้โค้ด</button>
+                  </div>
+                  {discountError && <p className="text-xs text-red-500 mt-2 font-medium">{discountError}</p>}
+                </div>
+
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                   <h2 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">สรุปรายการสั่งซื้อ</h2>
                   <div className="space-y-2 mb-4">
+                    {/* รายการอาหาร */}
                     {Object.entries(cart).map(([id, qty]) => {
                       const item = menuItems.find(m => m.id === id);
-                      return <div key={id} className="flex justify-between text-sm"><span className="text-gray-600">{qty} x {item ? item.name : id}</span><span className="font-medium">฿{item ? item.price * qty : 0}</span></div>;
+                      return <div key={id} className="flex justify-between text-sm"><span className="text-gray-600">{qty} x {item ? item.name : id}</span><span className="font-medium text-gray-800">฿{item ? item.price * qty : 0}</span></div>;
                     })}
+                    
+                    {/* ค่าส่งและส่วนลด */}
+                    <div className="border-t border-dashed border-gray-200 pt-3 mt-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">ค่าจัดส่ง ({distanceKm.toFixed(1)} กม.)</span>
+                        <span className="font-medium text-gray-800">฿{deliveryFee}</span>
+                      </div>
+                      {appliedDiscount && (
+                        <div className="flex justify-between text-sm text-green-600 mt-1 font-bold">
+                          <span>ส่วนลดค่าส่ง ({appliedDiscount.code})</span>
+                          <span>-฿{discountAmount}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex justify-between items-end pt-3 border-t border-dashed border-gray-200">
-                    <span className="font-bold text-gray-800">ยอดชำระสุทธิ</span><span className="text-2xl font-bold text-orange-600">฿{totalPrice}</span>
+                  
+                  <div className="flex justify-between items-end pt-3 border-t-2 border-gray-100">
+                    <span className="font-bold text-gray-800">ยอดชำระสุทธิ</span><span className="text-3xl font-black text-orange-600">฿{finalTotalPrice}</span>
                   </div>
                 </div>
 
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 text-center">
                   <h3 className="font-bold text-gray-800 mb-1">สแกน QR เพื่อชำระเงิน</h3>
-                  <div className="bg-blue-900 p-4 rounded-xl inline-block mb-4 w-full max-w-[250px]">
+                  <div className="bg-blue-900 p-4 rounded-xl inline-block mb-4 w-full max-w-[250px] shadow-sm">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/PromptPay-logo.jpg/1200px-PromptPay-logo.jpg" alt="PromptPay" className="h-6 mx-auto mb-3 rounded-sm object-cover" />
-                    <div className="bg-white p-2 rounded-lg"><img src={`https://promptpay.io/${PROMPTPAY_NUMBER}/${totalPrice}.png`} alt="QR Code" className="w-full" /></div>
-                    <p className="text-white text-sm font-medium mt-3">ยอดเงิน: {totalPrice} บาท</p>
+                    <div className="bg-white p-2 rounded-lg"><img src={`https://promptpay.io/${PROMPTPAY_NUMBER}/${finalTotalPrice}.png`} alt="QR Code" className="w-full" /></div>
+                    <p className="text-white text-sm font-medium mt-3">ยอดเงิน: {finalTotalPrice} บาท</p>
                   </div>
 
                   <label className="block w-full">
                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                    <div className={`w-full py-4 border-2 border-dashed rounded-xl flex flex-col items-center gap-2 cursor-pointer ${slipImage ? 'border-orange-500 bg-orange-50' : 'border-gray-300 bg-gray-50'}`}>
+                    <div className={`w-full py-4 border-2 border-dashed rounded-xl flex flex-col items-center gap-2 cursor-pointer transition-colors ${slipImage ? 'border-orange-500 bg-orange-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}>
                       {slipImage ? (
-                        <><CheckCircle className="text-orange-500" size={24} /><span className="text-sm font-medium text-orange-700">แนบสลิปเรียบร้อยแล้ว</span><img src={slipImage} alt="Slip" className="h-20 object-contain mt-2" /></>
+                        <><CheckCircle className="text-orange-500" size={24} /><span className="text-sm font-medium text-orange-700">แนบสลิปเรียบร้อยแล้ว</span><img src={slipImage} alt="Slip" className="h-20 object-contain mt-2 rounded shadow-sm" /></>
                       ) : (
                         <><Camera className="text-gray-400" size={28} /><span className="text-sm font-medium text-gray-600">กดเพื่อแนบสลิปโอนเงิน</span></>
                       )}
@@ -314,34 +401,36 @@ export default function Home() {
               </div>
             )}
 
+            {/* Step 4: สำเร็จ */}
             {step === 4 && (
               <div className="bg-white p-8 rounded-3xl shadow-lg border border-orange-100 text-center mt-10">
                 <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4"><CheckCircle className="text-green-500 w-10 h-10" /></div>
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">ส่งออเดอร์สำเร็จ!</h2>
-                <p className="text-gray-500 text-sm mb-6">ระบบส่งสลิปและพิกัดจัดส่งให้ทางร้านแล้ว กรุณารอทางร้านติดต่อกลับครับ</p>
-                <button onClick={() => window.location.reload()} className="text-orange-600 font-medium text-sm underline">สั่งออเดอร์ใหม่</button>
+                <p className="text-gray-500 text-sm mb-6">ระบบส่งสลิปและพิกัดจัดส่งให้ทางร้านแล้ว กรุณารอรับอาหารได้เลยครับ</p>
+                <button onClick={() => window.location.reload()} className="text-orange-600 font-medium text-sm underline">กลับไปหน้าแรก</button>
               </div>
             )}
           </main>
 
+          {/* ปุุ่มลอยตัว (Sticky Bottom Bar) */}
           {step === 1 && totalItems > 0 && (
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t z-40">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t z-40 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)]">
               <div className="max-w-md mx-auto">
-                <button onClick={() => setStep(2)} className="w-full bg-orange-600 text-white rounded-2xl p-4 font-bold flex items-center justify-between shadow-lg">
+                <button onClick={() => setStep(2)} className="w-full bg-orange-600 text-white rounded-2xl p-4 font-bold flex items-center justify-between shadow-lg hover:bg-orange-700 transition-colors">
                   <div className="flex items-center gap-2"><div className="bg-white/20 px-2 py-1 rounded-lg flex items-center gap-1"><ShoppingBag size={18} /><span>{totalItems}</span></div><span>สรุปคำสั่งซื้อ</span></div>
-                  <div className="flex items-center gap-1"><span className="text-lg">฿{totalPrice}</span><ChevronRight size={20} /></div>
+                  <div className="flex items-center gap-1"><span className="text-lg">฿{totalFoodPrice}</span><ChevronRight size={20} /></div>
                 </button>
               </div>
             </div>
           )}
 
           {step > 1 && step < 4 && (
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t z-40">
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t z-40 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)]">
             <div className="max-w-md mx-auto">
               {step === 2 ? (
-                <button onClick={handleProceedToPayment} className="w-full bg-orange-600 text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2">ยืนยันข้อมูลจัดส่ง <ChevronRight size={20} /></button>
+                <button onClick={handleProceedToPayment} className="w-full bg-orange-600 text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2 hover:bg-orange-700 transition-colors">ยืนยันข้อมูลจัดส่ง <ChevronRight size={20} /></button>
               ) : (
-                <button onClick={submitOrder} disabled={isSubmitting} className={`w-full text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2 ${isSubmitting ? 'bg-gray-400' : 'bg-green-600'}`}>
+                <button onClick={submitOrder} disabled={isSubmitting} className={`w-full text-white rounded-2xl py-4 font-bold shadow-lg flex justify-center items-center gap-2 transition-colors ${isSubmitting ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>
                   {isSubmitting ? 'กำลังส่งข้อมูล...' : 'ส่งสลิป ยืนยันคำสั่งซื้อ'} <CheckCircle size={20} />
                 </button>
               )}
