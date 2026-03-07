@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut } from 'lucide-react';
+import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut, Camera } from 'lucide-react';
 
 export default function Admin() {
-  // --- สถานะสำหรับการล็อคอิน ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // --- สถานะข้อมูลหลังร้าน ---
   const [data, setData] = useState({ 
     promptPay: '', materials: [], menuItems: [], 
     delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
@@ -18,14 +16,13 @@ export default function Admin() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('menu');
 
-  // ตรวจสอบสถานะการล็อคอินเมื่อเปิดหน้าเว็บ
   useEffect(() => {
     const auth = localStorage.getItem('moojum_admin_auth');
     if (auth === 'true') {
       setIsAuthenticated(true);
-      fetchData(); // ดึงข้อมูลเฉพาะตอนที่ล็อคอินผ่านแล้ว
+      fetchData();
     } else {
-      setIsLoading(false); // ปิดสถานะโหลดเพื่อโชว์หน้าล็อคอิน
+      setIsLoading(false);
     }
   }, []);
 
@@ -45,7 +42,7 @@ export default function Admin() {
       localStorage.setItem('moojum_admin_auth', 'true');
       setIsAuthenticated(true);
       setAuthError('');
-      fetchData(); // รหัสผ่านถูกต้อง ให้เริ่มดึงข้อมูล
+      fetchData();
     } else {
       setAuthError('รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่');
     }
@@ -74,7 +71,6 @@ export default function Admin() {
     setIsSaving(false);
   };
 
-  // --- ฟังก์ชันจัดการวัตถุดิบ ---
   const handleMaterialChange = (id, field, value) => {
     const updated = data.materials.map(m => m.id === id ? { ...m, [field]: field === 'name' || field === 'unit' ? value : Number(value) } : m);
     setData({ ...data, materials: updated });
@@ -87,11 +83,29 @@ export default function Admin() {
     if(confirm('ลบวัตถุดิบนี้?')) setData({ ...data, materials: data.materials.filter(m => m.id !== id) });
   };
 
-  // --- ฟังก์ชันจัดการเมนูและสูตร ---
   const handleMenuChange = (id, field, value) => {
     const updatedMenu = data.menuItems.map(item => item.id === id ? { ...item, [field]: field === 'price' ? Number(value) : value } : item);
     setData({ ...data, menuItems: updatedMenu });
   };
+
+  // อัปโหลดรูปภาพอาหาร
+  const handleMenuImageUpload = async (id, file) => {
+    if (!file) return;
+    const formData = new FormData(); 
+    formData.append('image', file);
+    try {
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=5f481fd2d9b156fc69bbc59eafb656ff`, { method: 'POST', body: formData });
+      const imgData = await res.json();
+      if (imgData.success) {
+        handleMenuChange(id, 'image', imgData.data.url);
+      } else {
+        alert('อัปโหลดรูปไม่สำเร็จ');
+      }
+    } catch (err) {
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+    }
+  };
+
   const handleRecipeChange = (menuId, matId, newQty) => {
     const qty = Number(newQty);
     const updatedMenu = data.menuItems.map(item => {
@@ -126,7 +140,6 @@ export default function Admin() {
     return totalCost;
   };
 
-  // --- ฟังก์ชันเพิ่ม/ลบเมนูใหม่ (เพิ่มเข้ามาใหม่) ---
   const addMenuItem = () => {
     const newItem = { 
       id: `menu_${Date.now()}`, 
@@ -134,7 +147,7 @@ export default function Admin() {
       desc: '', 
       price: 0, 
       image: '🍲', 
-      type: 'main', // 'main' = เมนูหลัก, 'addon' = สั่งเพิ่ม
+      type: 'main',
       isAvailable: true, 
       recipe: {} 
     };
@@ -147,7 +160,6 @@ export default function Admin() {
     }
   };
 
-  // --- ฟังก์ชันจัดการระบบ Delivery & โค้ดส่วนลด ---
   const handleDeliveryChange = (field, value) => {
     setData({ ...data, delivery: { ...data.delivery, [field]: Number(value) } });
   };
@@ -165,7 +177,6 @@ export default function Admin() {
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500 font-medium">กำลังโหลดข้อมูล...</div>;
 
-  // --- หน้าจอสำหรับ Login ---
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
@@ -196,7 +207,6 @@ export default function Admin() {
     );
   }
 
-  // --- หน้าจอ Admin หลัก (เมื่อล็อคอินผ่านแล้ว) ---
   return (
     <>
       <Head>
@@ -225,7 +235,6 @@ export default function Admin() {
               <LayoutDashboard size={20} /> สรุปยอด (Dashboard)
             </button>
           </nav>
-          {/* ปุ่มออกจากระบบ */}
           <div className="p-4 mt-auto border-t border-slate-800">
             <button onClick={handleLogout} className="flex items-center justify-center gap-2 w-full p-3 bg-slate-800 text-slate-400 rounded-lg hover:bg-slate-700 hover:text-white transition-colors">
               <LogOut size={18} /> ออกจากระบบ
@@ -252,7 +261,6 @@ export default function Admin() {
             {activeTab === 'menu' && (
               <div className="space-y-6">
                 
-                {/* ปุ่มเพิ่มเมนูใหม่ */}
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <h2 className="font-bold text-slate-700">รายการเมนูทั้งหมด</h2>
                   <button onClick={addMenuItem} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-orange-700 shadow-sm transition-all">
@@ -267,16 +275,32 @@ export default function Admin() {
                     <div key={item.id} className={`bg-white rounded-2xl p-6 shadow-sm border ${item.isAvailable ? 'border-orange-100' : 'border-slate-200 bg-slate-50 opacity-80'}`}>
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex gap-4 w-full">
-                          {/* ช่องใส่อีโมจิ/รูป */}
-                          <input 
-                            type="text" 
-                            value={item.image || ''} 
-                            onChange={(e) => handleMenuChange(item.id, 'image', e.target.value)} 
-                            className="text-4xl bg-slate-100 w-16 h-16 flex items-center justify-center rounded-2xl text-center focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer shrink-0" 
-                            title="ใส่อีโมจิหรือรูป"
-                          />
+                          
+                          {/* กล่องใส่รูปหรืออีโมจิ */}
+                          <div className="relative w-16 h-16 shrink-0 group">
+                            {item.image && item.image.startsWith('http') ? (
+                              <img src={item.image} alt="menu" className="w-full h-full object-cover rounded-2xl border border-slate-200" />
+                            ) : (
+                              <input 
+                                type="text" 
+                                value={item.image || ''} 
+                                onChange={(e) => handleMenuChange(item.id, 'image', e.target.value)} 
+                                className="text-4xl bg-slate-100 w-full h-full flex items-center justify-center rounded-2xl text-center focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer" 
+                                title="ใส่อีโมจิ"
+                              />
+                            )}
+                            <label className="absolute -bottom-2 -right-2 bg-orange-500 text-white p-1.5 rounded-full cursor-pointer shadow-md hover:bg-orange-600 transition-colors">
+                              <Camera size={14} />
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleMenuImageUpload(item.id, e.target.files[0])} />
+                            </label>
+                            {item.image && item.image.startsWith('http') && (
+                              <button onClick={() => handleMenuChange(item.id, 'image', '🍲')} className="absolute -top-2 -right-2 bg-slate-800 text-white p-1 rounded-full shadow-md hover:bg-slate-700">
+                                <Trash2 size={12}/>
+                              </button>
+                            )}
+                          </div>
+
                           <div className="flex-1">
-                            {/* ช่องใส่ชื่อเมนู */}
                             <input 
                               type="text" 
                               value={item.name} 
@@ -284,7 +308,6 @@ export default function Admin() {
                               className="text-xl font-bold text-slate-800 bg-transparent border-b border-dashed border-slate-300 focus:border-orange-500 outline-none w-full mb-1" 
                               placeholder="ชื่อเมนู" 
                             />
-                            {/* ช่องใส่คำอธิบาย */}
                             <input 
                               type="text" 
                               value={item.desc || ''} 
@@ -292,7 +315,6 @@ export default function Admin() {
                               className="text-sm text-slate-500 bg-transparent border-b border-dashed border-slate-300 focus:border-orange-500 outline-none w-full mb-2 placeholder:text-slate-300" 
                               placeholder="รายละเอียดเมนู (ถ้ามี)" 
                             />
-                            {/* เลือกหมวดหมู่ */}
                             <select 
                               value={item.type || 'main'} 
                               onChange={(e) => handleMenuChange(item.id, 'type', e.target.value)} 
