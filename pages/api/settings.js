@@ -1,6 +1,5 @@
 import Redis from 'ioredis';
 
-// ดึงรหัสผ่านฐานข้อมูลให้ตรงกับที่ Vercel ตั้งให้เป๊ะๆ (REDIS_URL)
 const redisUrl = process.env.REDIS_URL;
 const redis = redisUrl ? new Redis(redisUrl) : null;
 
@@ -8,9 +7,19 @@ export const config = {
   api: { bodyParser: { sizeLimit: '5mb' } },
 };
 
-// ข้อมูลตั้งต้น
+// เพิ่มการตั้งค่าเริ่มต้นสำหรับระบบจัดส่งและโค้ดส่วนลด
 const DEFAULT_SETTINGS = {
   promptPay: '0812345678',
+  delivery: {
+    storeLat: 14.8818, // พิกัดร้านเริ่มต้น (คุณสามารถไปแก้ในหน้า Admin ได้)
+    storeLng: 100.4039,
+    baseFee: 10,       // ค่าส่งเริ่มต้น (บาท)
+    ratePerKm: 8       // ค่าส่งบวกเพิ่มกิโลเมตรละ (บาท)
+  },
+  discountCodes: [
+    { id: 'c1', code: 'FREE100', percent: 100, isActive: true }, // ลดค่าส่ง 100%
+    { id: 'c2', code: 'HALF50', percent: 50, isActive: true }    // ลดค่าส่ง 50%
+  ],
   materials: [
     { id: 'mat_pork', name: 'หมูสไลด์', cost: 40, stock: 100, unit: 'ถาด' },
     { id: 'mat_veg', name: 'ชุดผักรวม', cost: 20, stock: 50, unit: 'ชุด' },
@@ -38,7 +47,13 @@ export default async function handler(req, res) {
     if (redis) {
       try {
         const data = await redis.get('storeSettings');
-        if (data) return res.status(200).json(JSON.parse(data));
+        if (data) {
+          const parsedData = JSON.parse(data);
+          // อัปเดตโครงสร้างเก่าให้มีฟิลด์ใหม่ (กันกรณีผู้ใช้เก่าไม่มีฟิลด์นี้)
+          if (!parsedData.delivery) parsedData.delivery = DEFAULT_SETTINGS.delivery;
+          if (!parsedData.discountCodes) parsedData.discountCodes = DEFAULT_SETTINGS.discountCodes;
+          return res.status(200).json(parsedData);
+        }
       } catch (e) {
         console.error('Redis GET Error:', e);
       }
