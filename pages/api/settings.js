@@ -1,15 +1,8 @@
-import { Redis } from '@upstash/redis';
+import Redis from 'ioredis';
 
-// ฉลาดขึ้น: ให้เช็กหาฐานข้อมูลทั้งแบบ Upstash ใหม่ และ Vercel KV เดิม
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-
-const isDatabaseConnected = !!(redisUrl && redisToken);
-
-// ถ้ามีฐานข้อมูลให้เชื่อมต่อ ถ้าไม่มีให้เป็น null
-const redis = isDatabaseConnected 
-  ? new Redis({ url: redisUrl, token: redisToken }) 
-  : null;
+// ดึงรหัสผ่านฐานข้อมูลให้ตรงกับที่ Vercel ตั้งให้เป๊ะๆ (REDIS_URL)
+const redisUrl = process.env.REDIS_URL;
+const redis = redisUrl ? new Redis(redisUrl) : null;
 
 export const config = {
   api: { bodyParser: { sizeLimit: '5mb' } },
@@ -45,7 +38,7 @@ export default async function handler(req, res) {
     if (redis) {
       try {
         const data = await redis.get('storeSettings');
-        if (data) return res.status(200).json(data);
+        if (data) return res.status(200).json(JSON.parse(data));
       } catch (e) {
         console.error('Redis GET Error:', e);
       }
@@ -57,7 +50,7 @@ export default async function handler(req, res) {
     const body = req.body;
     if (redis) {
       try {
-        await redis.set('storeSettings', body);
+        await redis.set('storeSettings', JSON.stringify(body));
         memorySettings = body;
         return res.status(200).json({ message: 'บันทึกข้อมูลลงฐานข้อมูลถาวรสำเร็จ!' });
       } catch (e) {
@@ -67,7 +60,7 @@ export default async function handler(req, res) {
     } else {
       memorySettings = body;
       return res.status(200).json({ 
-        message: '⚠️ บันทึกสำเร็จ (แต่เป็นความจำชั่วคราว เพราะเว็บมองไม่เห็นรหัสผ่านฐานข้อมูล)' 
+        message: '⚠️ บันทึกสำเร็จ (แต่เป็นความจำชั่วคราว เพราะเว็บยังหา REDIS_URL ไม่เจอ)' 
       });
     }
   }
