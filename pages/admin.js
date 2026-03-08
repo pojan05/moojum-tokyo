@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut, Camera } from 'lucide-react';
+// เพิ่ม ShoppingBag เข้ามาในบรรทัดนี้แล้วครับ 👇
+import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut, Camera, ShoppingBag } from 'lucide-react';
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // --- อัปเดต state รับค่า isStoreOpen, minOrderAmount, freeDeliveryThreshold ---
   const [data, setData] = useState({ 
     promptPay: '', allowCash: false, storePhone: '', storeBanner: '', 
     isStoreOpen: true, minOrderAmount: 0, freeDeliveryThreshold: 0,
@@ -34,8 +34,13 @@ export default function Admin() {
     fetch('/api/settings')
       .then(res => res.json())
       .then(fetchedData => {
+        // อัปเดตการดึงข้อมูล ป้องกันบั๊กกรณีที่โครงสร้างข้อมูลเดิมยังไม่มี
         setData({ 
           ...fetchedData, 
+          delivery: fetchedData.delivery || { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
+          discountCodes: fetchedData.discountCodes || [],
+          materials: fetchedData.materials || [],
+          menuItems: fetchedData.menuItems || [],
           allowCash: fetchedData.allowCash || false,
           storePhone: fetchedData.storePhone || '',
           storeBanner: fetchedData.storeBanner || '',
