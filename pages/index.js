@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map, Ticket } from 'lucide-react';
+import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map, Ticket, ExternalLink } from 'lucide-react';
 
 export default function Home() {
   const [step, setStep] = useState(1);
@@ -13,6 +13,7 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [paymentMethod, setPaymentMethod] = useState('promptpay');
+  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
   
   const [distanceKm, setDistanceKm] = useState(0);
   const [deliveryFee, setDeliveryFee] = useState(0);
@@ -24,7 +25,13 @@ export default function Home() {
     promptPay: '0812345678', allowCash: false, storePhone: '', storeBanner: '', delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [], menuItems: []
   });
 
+  // ตรวจสอบว่าเป็น In-App Browser (LINE, FB, IG) หรือไม่
   useEffect(() => {
+    const ua = navigator.userAgent || navigator.vendor || window.opera;
+    if (ua.indexOf('FBAV') > -1 || ua.indexOf('FBAN') > -1 || ua.indexOf('Line') > -1 || ua.indexOf('Instagram') > -1) {
+      setIsInAppBrowser(true);
+    }
+    
     fetch('/api/settings').then(res => res.json()).then(data => { if (data) setStoreData(data); }).catch(() => {});
   }, []);
 
@@ -157,6 +164,23 @@ export default function Home() {
     } catch (err) { setError('ขัดข้องในการเชื่อมต่อ กรุณาลองใหม่'); } 
     finally { setIsSubmitting(false); }
   };
+
+  // --- หากเปิดจากแอปแชท (LINE, FB) จะโชว์หน้าจอนี้เพื่อบังคับให้ไปเปิดใน Chrome/Safari ---
+  if (isInAppBrowser) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 font-sans text-center">
+        <div className="w-20 h-20 bg-orange-500 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-orange-500/30">
+          <ExternalLink size={36} />
+        </div>
+        <h1 className="text-2xl font-black mb-3">กรุณาเปิดในเบราว์เซอร์</h1>
+        <p className="text-slate-300 text-base mb-8 max-w-sm leading-relaxed">
+          เพื่อให้ระบบ <b>แผนที่ GPS</b> และ <b>การแนบสลิป</b> ทำงานได้สมบูรณ์ กรุณากดปุ่ม <b>จุด 3 จุด (หรือแชร์) มุมขวาบน</b> แล้วเลือก <br/><br/>
+          <span className="bg-white/10 px-4 py-2 rounded-xl font-bold text-orange-400">"เปิดในเบราว์เซอร์" (Open in Browser)</span> <br/>
+          <span className="text-sm mt-2 block">หรือ "เปิดใน Safari / Chrome"</span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
