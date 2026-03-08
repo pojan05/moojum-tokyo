@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut } from 'lucide-react';
+import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut, Camera } from 'lucide-react';
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState('');
 
+  // เพิ่ม storePhone และ storeBanner ใน state เริ่มต้น
   const [data, setData] = useState({ 
-    promptPay: '', allowCash: false, materials: [], menuItems: [], 
+    promptPay: '', allowCash: false, storePhone: '', storeBanner: '', materials: [], menuItems: [], 
     delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
     discountCodes: [] 
   });
@@ -31,8 +32,12 @@ export default function Admin() {
     fetch('/api/settings')
       .then(res => res.json())
       .then(fetchedData => {
-        // อัปเดตข้อมูลโดยรักษาค่า allowCash เดิมถ้ามี ถ้าไม่มีให้เป็น false
-        setData({ ...fetchedData, allowCash: fetchedData.allowCash || false });
+        setData({ 
+          ...fetchedData, 
+          allowCash: fetchedData.allowCash || false,
+          storePhone: fetchedData.storePhone || '',
+          storeBanner: fetchedData.storeBanner || ''
+        });
         setIsLoading(false);
       });
   };
@@ -53,7 +58,7 @@ export default function Admin() {
     localStorage.removeItem('moojum_admin_auth');
     setIsAuthenticated(false);
     setPasscode('');
-    setData({ promptPay: '', allowCash: false, materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
+    setData({ promptPay: '', allowCash: false, storePhone: '', storeBanner: '', materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
   };
 
   const saveSettings = async () => {
@@ -100,6 +105,24 @@ export default function Admin() {
         handleMenuChange(id, 'image', imgData.data.url);
       } else {
         alert('อัปโหลดรูปไม่สำเร็จ');
+      }
+    } catch (err) {
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+    }
+  };
+
+  // ฟังก์ชันอัปโหลดแบนเนอร์ร้าน
+  const handleBannerUpload = async (file) => {
+    if (!file) return;
+    const formData = new FormData(); 
+    formData.append('image', file);
+    try {
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=5f481fd2d9b156fc69bbc59eafb656ff`, { method: 'POST', body: formData });
+      const imgData = await res.json();
+      if (imgData.success) {
+        setData({ ...data, storeBanner: imgData.data.url });
+      } else {
+        alert('อัปโหลดแบนเนอร์ไม่สำเร็จ');
       }
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
@@ -257,7 +280,7 @@ export default function Admin() {
               </button>
             </div>
 
-            {/* TAB 1: MENU & RECIPE */}
+            {/* TAB 1: MENU */}
             {activeTab === 'menu' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
@@ -470,6 +493,43 @@ export default function Admin() {
             {/* TAB 4: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
+
+                {/* --- เพิ่มส่วนตั้งค่า ข้อมูลร้านค้าและแบนเนอร์ --- */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="font-bold text-slate-800 text-lg mb-4">🏪 ข้อมูลร้านค้า & โปรโมชั่น</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="text-sm font-bold text-slate-600 block mb-2">เบอร์โทรติดต่อร้าน</label>
+                      <input 
+                        type="text" 
+                        value={data.storePhone || ''} 
+                        onChange={(e) => setData({...data, storePhone: e.target.value})} 
+                        placeholder="เช่น 081-234-5678" 
+                        className="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 font-bold" 
+                      />
+                      <p className="text-xs text-slate-400 mt-2">เบอร์นี้จะไปแสดงที่แถบด้านบนสุดของหน้าร้าน</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-bold text-slate-600 block mb-2">รูปแบนเนอร์โปรโมชั่น (ถ้ามี)</label>
+                      <div className="flex items-center gap-4">
+                        {data.storeBanner ? (
+                          <div className="relative w-32 h-20 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                            <img src={data.storeBanner} alt="Banner" className="w-full h-full object-cover" />
+                            <button onClick={() => setData({...data, storeBanner: ''})} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"><Trash2 size={12}/></button>
+                          </div>
+                        ) : (
+                          <div className="w-32 h-20 bg-slate-50 rounded-lg flex items-center justify-center border border-dashed border-slate-300 text-slate-400 text-xs text-center p-2 shrink-0">ไม่มีแบนเนอร์</div>
+                        )}
+                        <label className="bg-slate-900 text-white px-4 py-2 rounded-lg cursor-pointer text-sm font-bold hover:bg-slate-800 transition-all text-center">
+                          อัปโหลดรูป
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleBannerUpload(e.target.files[0])} />
+                        </label>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-2">แนะนำรูปแนวนอน (เช่น 800x400 px) จะไปโชว์ด้านบนเมนู</p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
                   <div>
                     <h3 className="font-bold text-slate-800 text-lg">💳 เบอร์พร้อมเพย์รับเงิน</h3>
@@ -481,7 +541,6 @@ export default function Admin() {
                   </div>
                 </div>
 
-                {/* --- เพิ่มส่วนตั้งค่ารับเงินสด --- */}
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
                   <div>
                     <h3 className="font-bold text-slate-800 text-lg">💵 รับเงินสดปลายทาง</h3>
