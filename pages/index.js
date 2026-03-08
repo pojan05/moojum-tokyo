@@ -35,6 +35,7 @@ export default function Home() {
     });
   };
 
+  // สูตรคำนวณเส้นตรง (เก็บไว้เป็นตัวสำรองเผื่อ Google Maps ล่ม)
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
@@ -44,14 +45,42 @@ export default function Home() {
   const getLocation = () => {
     setIsLocating(true); setError('');
     if (!navigator.geolocation) { setError('เบราว์เซอร์ไม่รองรับ GPS'); setIsLocating(false); return; }
+    
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const userLat = pos.coords.latitude; const userLng = pos.coords.longitude;
         setLocation({ lat: userLat, lng: userLng });
+        
         const { storeLat = 0, storeLng = 0, baseFee = 0, ratePerKm = 0 } = storeData.delivery || {};
+        
         if (storeLat && storeLng) {
-          const dist = calculateDistance(storeLat, storeLng, userLat, userLng);
-          setDistanceKm(dist); setDeliveryFee(Math.ceil(baseFee + (dist * ratePerKm)));
+          try {
+            // เรียกไปที่ API ของเราเพื่อดึงระยะทางถนนจริงจาก Google Maps
+            const response = await fetch('/api/distance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origins: `${storeLat},${storeLng}`, destinations: `${userLat},${userLng}` })
+            });
+            
+            const data = await response.json();
+            
+            if (data.distance) {
+              // ดึงข้อมูลสำเร็จ ใช้ระยะทางถนนจริง
+              const dist = data.distance;
+              setDistanceKm(dist); 
+              setDeliveryFee(Math.ceil(baseFee + (dist * ratePerKm)));
+            } else {
+              // ถ้าดึงไม่สำเร็จ ให้กลับไปใช้สูตรเส้นตรงแทน
+              const fallbackDist = calculateDistance(storeLat, storeLng, userLat, userLng);
+              setDistanceKm(fallbackDist); 
+              setDeliveryFee(Math.ceil(baseFee + (fallbackDist * ratePerKm)));
+            }
+          } catch (err) {
+            // ถ้าระบบขัดข้อง ให้สลับไปใช้สูตรเส้นตรง
+            const fallbackDist = calculateDistance(storeLat, storeLng, userLat, userLng);
+            setDistanceKm(fallbackDist); 
+            setDeliveryFee(Math.ceil(baseFee + (fallbackDist * ratePerKm)));
+          }
         } else {
           setDistanceKm(0); setDeliveryFee(baseFee);
         }
@@ -159,7 +188,6 @@ export default function Home() {
                 <h2 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2"><Utensils className="text-orange-500" size={22} /> เมนูหลัก</h2>
                 {menuItems.filter(m => m.type === 'main' && m.isAvailable).map(item => (
                   <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4 mb-4 active:scale-[0.98] transition-transform">
-                    {/* จุดที่ 1 แก้ไขการแสดงผลรูปภาพ/อีโมจิ */}
                     <div className="w-28 h-28 bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl flex items-center justify-center text-6xl shrink-0 shadow-inner overflow-hidden">
                       {item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}
                     </div>
@@ -186,7 +214,6 @@ export default function Home() {
                 <div className="grid grid-cols-2 gap-3">
                   {menuItems.filter(m => m.type === 'addon').map(item => (
                     <div key={item.id} className={`bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center text-center relative ${!item.isAvailable ? 'opacity-60 grayscale' : ''}`}>
-                      {/* จุดที่ 2 แก้ไขการแสดงผลรูปภาพ/อีโมจิ */}
                       <div className="w-16 h-16 mb-3 flex items-center justify-center text-5xl bg-transparent rounded-full overflow-hidden">
                         {item.image?.startsWith('http') ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" /> : item.image}
                       </div>
