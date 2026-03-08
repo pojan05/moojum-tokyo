@@ -12,7 +12,6 @@ export default function Home() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // เพิ่ม state สำหรับวิธีชำระเงิน
   const [paymentMethod, setPaymentMethod] = useState('promptpay');
   
   const [distanceKm, setDistanceKm] = useState(0);
@@ -22,7 +21,7 @@ export default function Home() {
   const [discountError, setDiscountError] = useState('');
   
   const [storeData, setStoreData] = useState({
-    promptPay: '0812345678', allowCash: false, delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [], menuItems: []
+    promptPay: '0812345678', allowCash: false, storePhone: '', storeBanner: '', delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [], menuItems: []
   });
 
   useEffect(() => {
@@ -30,8 +29,9 @@ export default function Home() {
   }, []);
 
   const allowCash = storeData.allowCash || false;
+  const storePhone = storeData.storePhone || '';
+  const storeBanner = storeData.storeBanner || '';
 
-  // บังคับกลับไปพร้อมเพย์ถ้าหน้าร้านโดนปิดรับเงินสด
   useEffect(() => {
     if (!allowCash && paymentMethod === 'cash') setPaymentMethod('promptpay');
   }, [allowCash, paymentMethod]);
@@ -172,7 +172,13 @@ export default function Home() {
               <div className="bg-white/20 p-2.5 rounded-2xl shadow-inner backdrop-blur-sm text-2xl">🍲</div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight">หมูจุ่มโตเกียว</h1>
-                <p className="text-xs font-medium opacity-90">Delivery ส่งตรงถึงบ้าน</p>
+                {storePhone ? (
+                  <div className="flex items-center gap-1.5 text-sm font-medium opacity-90 mt-0.5 bg-black/10 px-2 py-0.5 rounded-full w-fit">
+                    <Phone size={12} /> <span>{storePhone}</span>
+                  </div>
+                ) : (
+                  <p className="text-xs font-medium opacity-90">Delivery ส่งตรงถึงบ้าน</p>
+                )}
               </div>
             </div>
             {step > 1 && step < 4 && (
@@ -198,7 +204,15 @@ export default function Home() {
 
           {/* STEP 1: เมนู */}
           {step === 1 && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-in fade-in duration-300">
+              
+              {/* แบนเนอร์โปรโมชั่น */}
+              {storeBanner && (
+                <div className="rounded-2xl overflow-hidden shadow-sm border border-slate-100">
+                  <img src={storeBanner} alt="Promotion Banner" className="w-full h-auto object-cover" />
+                </div>
+              )}
+
               <section>
                 <h2 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2"><Utensils className="text-orange-500" size={22} /> เมนูหลัก</h2>
                 {menuItems.filter(m => m.type === 'main' && m.isAvailable).map(item => (
