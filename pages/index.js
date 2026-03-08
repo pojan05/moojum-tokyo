@@ -12,6 +12,9 @@ export default function Home() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // เพิ่ม state สำหรับวิธีชำระเงิน
+  const [paymentMethod, setPaymentMethod] = useState('promptpay');
+  
   const [distanceKm, setDistanceKm] = useState(0);
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [discountInput, setDiscountInput] = useState('');
@@ -19,12 +22,19 @@ export default function Home() {
   const [discountError, setDiscountError] = useState('');
   
   const [storeData, setStoreData] = useState({
-    promptPay: '0812345678', delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [], menuItems: []
+    promptPay: '0812345678', allowCash: false, delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [], menuItems: []
   });
 
   useEffect(() => {
     fetch('/api/settings').then(res => res.json()).then(data => { if (data) setStoreData(data); }).catch(() => {});
   }, []);
+
+  const allowCash = storeData.allowCash || false;
+
+  // บังคับกลับไปพร้อมเพย์ถ้าหน้าร้านโดนปิดรับเงินสด
+  useEffect(() => {
+    if (!allowCash && paymentMethod === 'cash') setPaymentMethod('promptpay');
+  }, [allowCash, paymentMethod]);
 
   const updateCart = (id, delta) => {
     setCart(prev => {
@@ -35,7 +45,6 @@ export default function Home() {
     });
   };
 
-  // สูตรคำนวณเส้นตรง (เก็บไว้เป็นตัวสำรองเผื่อ Google Maps ล่ม)
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
@@ -55,28 +64,23 @@ export default function Home() {
         
         if (storeLat && storeLng) {
           try {
-            // เรียกไปที่ API ของเราเพื่อดึงระยะทางถนนจริงจาก Google Maps
             const response = await fetch('/api/distance', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ origins: `${storeLat},${storeLng}`, destinations: `${userLat},${userLng}` })
             });
-            
             const data = await response.json();
             
             if (data.distance) {
-              // ดึงข้อมูลสำเร็จ ใช้ระยะทางถนนจริง
               const dist = data.distance;
               setDistanceKm(dist); 
               setDeliveryFee(Math.ceil(baseFee + (dist * ratePerKm)));
             } else {
-              // ถ้าดึงไม่สำเร็จ ให้กลับไปใช้สูตรเส้นตรงแทน
               const fallbackDist = calculateDistance(storeLat, storeLng, userLat, userLng);
               setDistanceKm(fallbackDist); 
               setDeliveryFee(Math.ceil(baseFee + (fallbackDist * ratePerKm)));
             }
           } catch (err) {
-            // ถ้าระบบขัดข้อง ให้สลับไปใช้สูตรเส้นตรง
             const fallbackDist = calculateDistance(storeLat, storeLng, userLat, userLng);
             setDistanceKm(fallbackDist); 
             setDeliveryFee(Math.ceil(baseFee + (fallbackDist * ratePerKm)));
@@ -120,7 +124,7 @@ export default function Home() {
   };
 
   const submitOrder = async () => {
-    if (!slipImage) return setError('กรุณาแนบรูปสลิปโอนเงิน');
+    if (paymentMethod === 'promptpay' && !slipImage) return setError('กรุณาแนบรูปสลิปโอนเงิน');
     setIsSubmitting(true); setError('');
     try {
       const orderDetails = Object.entries(cart).map(([id, qty]) => {
@@ -129,14 +133,25 @@ export default function Home() {
       if (deliveryFee > 0) orderDetails.push({ name: `🛵 ค่าจัดส่ง (${distanceKm.toFixed(1)} กม.)`, qty: 1 });
       if (appliedDiscount) orderDetails.push({ name: `🎟️ ส่วนลดค่าส่ง (-${appliedDiscount.percent}%)`, qty: 1 });
 
-      const formData = new FormData(); formData.append('image', slipImage.split(',')[1]);
-      const imgRes = await fetch(`https://api.imgbb.com/1/upload?key=5f481fd2d9b156fc69bbc59eafb656ff`, { method: 'POST', body: formData });
-      const imgData = await imgRes.json();
-      if (!imgData.success) throw new Error('อัปโหลดสลิปไม่สำเร็จ');
+      let finalSlipUrl = 'CASH_ON_DELIVERY';
+      if (paymentMethod === 'promptpay') {
+        const formData = new FormData(); formData.append('image', slipImage.split(',')[1]);
+        const imgRes = await fetch(`https://api.imgbb.com/1/upload?key=5f481fd2d9b156fc69bbc59eafb656ff`, { method: 'POST', body: formData });
+        const imgData = await imgRes.json();
+        if (!imgData.success) throw new Error('อัปโหลดสลิปไม่สำเร็จ');
+        finalSlipUrl = imgData.data.url;
+      }
       
       const response = await fetch('/api/send-order', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerInfo, orderDetails, totalPrice: finalTotalPrice, location, slipImageUrl: imgData.data.url })
+        body: JSON.stringify({ 
+          customerInfo, 
+          orderDetails, 
+          totalPrice: finalTotalPrice, 
+          location, 
+          slipImageUrl: finalSlipUrl,
+          paymentMethod: paymentMethod === 'cash' ? 'เงินสดปลายทาง' : 'โอนเงิน (พร้อมเพย์)'
+        })
       });
       if (response.ok) setStep(4); else setError((await response.json()).error || 'ส่งคำสั่งซื้อไม่สำเร็จ');
     } catch (err) { setError('ขัดข้องในการเชื่อมต่อ กรุณาลองใหม่'); } 
@@ -316,27 +331,52 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* โอนเงิน */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-orange-100 text-center">
-                <h3 className="font-black text-slate-800 mb-2">สแกน QR เพื่อชำระเงิน</h3>
-                <p className="text-xs text-slate-500 mb-4">สแกนผ่านแอปธนาคารใดก็ได้</p>
-                <div className="bg-slate-900 p-5 rounded-3xl inline-block mb-6 w-full max-w-[260px] shadow-lg">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/PromptPay-logo.jpg/1200px-PromptPay-logo.jpg" alt="PromptPay" className="h-7 mx-auto mb-4 rounded-md object-cover" />
-                  <div className="bg-white p-3 rounded-2xl"><img src={`https://promptpay.io/${PROMPTPAY_NUMBER}/${finalTotalPrice}.png`} alt="QR Code" className="w-full rounded-xl" /></div>
-                  <p className="text-white text-base font-black mt-4">ยอดโอน: {finalTotalPrice} บาท</p>
+              {/* ส่วนเลือกวิธีชำระเงิน */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <h3 className="font-black text-slate-800 mb-4 pb-2 border-b border-slate-100">เลือกวิธีชำระเงิน</h3>
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <button onClick={() => setPaymentMethod('promptpay')} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${paymentMethod === 'promptpay' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-100 bg-white text-slate-500'}`}>
+                    <span className="text-3xl">📱</span>
+                    <span className="font-bold text-sm">โอนเงิน (QR)</span>
+                  </button>
+                  {allowCash && (
+                    <button onClick={() => setPaymentMethod('cash')} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${paymentMethod === 'cash' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 bg-white text-slate-500'}`}>
+                      <span className="text-3xl">💵</span>
+                      <span className="font-bold text-sm">เงินสดปลายทาง</span>
+                    </button>
+                  )}
                 </div>
 
-                <label className="block w-full">
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                  <div className={`w-full py-6 border-2 border-dashed rounded-3xl flex flex-col items-center gap-3 cursor-pointer transition-all ${slipImage ? 'border-orange-500 bg-orange-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
-                    {slipImage ? (
-                      <><CheckCircle className="text-orange-500" size={32} /><span className="text-base font-black text-orange-700">แนบสลิปเรียบร้อยแล้ว</span><img src={slipImage} alt="Slip" className="h-24 object-contain mt-2 rounded-xl shadow-sm border border-orange-200" /></>
-                    ) : (
-                      <><Camera className="text-slate-400" size={36} /><span className="text-base font-bold text-slate-600">กดเพื่อแนบรูปสลิปโอนเงิน</span></>
-                    )}
+                {/* แสดงข้อมูลตามวิธีที่เลือก */}
+                {paymentMethod === 'promptpay' ? (
+                  <div className="animate-in fade-in duration-300 text-center">
+                    <p className="text-xs text-slate-500 mb-4">สแกนผ่านแอปธนาคารใดก็ได้</p>
+                    <div className="bg-slate-900 p-5 rounded-3xl inline-block mb-6 w-full max-w-[260px] shadow-lg">
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/PromptPay-logo.jpg/1200px-PromptPay-logo.jpg" alt="PromptPay" className="h-7 mx-auto mb-4 rounded-md object-cover" />
+                      <div className="bg-white p-3 rounded-2xl"><img src={`https://promptpay.io/${PROMPTPAY_NUMBER}/${finalTotalPrice}.png`} alt="QR Code" className="w-full rounded-xl" /></div>
+                      <p className="text-white text-base font-black mt-4">ยอดโอน: {finalTotalPrice} บาท</p>
+                    </div>
+
+                    <label className="block w-full">
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      <div className={`w-full py-6 border-2 border-dashed rounded-3xl flex flex-col items-center gap-3 cursor-pointer transition-all ${slipImage ? 'border-orange-500 bg-orange-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+                        {slipImage ? (
+                          <><CheckCircle className="text-orange-500" size={32} /><span className="text-base font-black text-orange-700">แนบสลิปเรียบร้อยแล้ว</span><img src={slipImage} alt="Slip" className="h-24 object-contain mt-2 rounded-xl shadow-sm border border-orange-200" /></>
+                        ) : (
+                          <><Camera className="text-slate-400" size={36} /><span className="text-base font-bold text-slate-600">กดเพื่อแนบรูปสลิปโอนเงิน</span></>
+                        )}
+                      </div>
+                    </label>
                   </div>
-                </label>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-3xl text-center animate-in zoom-in-95 duration-300">
+                    <div className="text-5xl mb-3">🛵</div>
+                    <h3 className="font-black text-emerald-800 mb-2">ชำระเงินปลายทาง</h3>
+                    <p className="text-sm text-emerald-600">กรุณาเตรียมเงินสด <b className="text-lg">฿{finalTotalPrice}</b><br/>เพื่อชำระกับไรเดอร์เมื่อได้รับอาหารครับ</p>
+                  </div>
+                )}
               </div>
+              
               {error && <div className="bg-rose-50 border border-rose-100 text-rose-600 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold animate-in fade-in"><AlertCircle size={20} shrink-0 />{error}</div>}
             </div>
           )}
@@ -346,7 +386,7 @@ export default function Home() {
             <div className="bg-white p-10 rounded-3xl shadow-xl border border-emerald-100 text-center mt-12 animate-in zoom-in-95 duration-500">
               <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle className="text-emerald-500 w-12 h-12" /></div>
               <h2 className="text-3xl font-black text-slate-800 mb-3 tracking-tight">ส่งออเดอร์สำเร็จ!</h2>
-              <p className="text-slate-500 text-base mb-8 leading-relaxed">ระบบส่งสลิปและพิกัดจัดส่งให้ทางร้านแล้ว<br/>กรุณารอรับอาหารได้เลยครับ 🛵💨</p>
+              <p className="text-slate-500 text-base mb-8 leading-relaxed">ระบบส่งข้อมูลและพิกัดจัดส่งให้ทางร้านแล้ว<br/>กรุณารอรับอาหารได้เลยครับ 🛵💨</p>
               <button onClick={() => window.location.reload()} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3 rounded-2xl font-bold transition-colors">สั่งออเดอร์ใหม่</button>
             </div>
           )}
@@ -367,8 +407,9 @@ export default function Home() {
           {step === 2 ? (
             <button onClick={handleProceedToPayment} className="w-full bg-slate-900 text-white rounded-3xl py-4.5 font-black shadow-2xl flex justify-center items-center gap-2 hover:bg-slate-800 active:scale-[0.98] transition-all text-lg">ไปหน้าชำระเงิน <ChevronRight size={22} /></button>
           ) : (
-            <button onClick={submitOrder} disabled={isSubmitting} className={`w-full text-white rounded-3xl py-4.5 font-black shadow-2xl flex justify-center items-center gap-2 transition-all text-lg ${isSubmitting ? 'bg-slate-400 scale-100' : 'bg-orange-600 hover:bg-orange-700 active:scale-[0.98]'}`}>
-              {isSubmitting ? 'กำลังส่งข้อมูล...' : 'ส่งสลิป ยืนยันคำสั่งซื้อ'} {!isSubmitting && <CheckCircle size={22} />}
+            <button onClick={submitOrder} disabled={isSubmitting} className={`w-full text-white rounded-3xl py-4.5 font-black shadow-2xl flex justify-center items-center gap-2 transition-all text-lg ${isSubmitting ? 'bg-slate-400 scale-100' : paymentMethod === 'cash' ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98]' : 'bg-orange-600 hover:bg-orange-700 active:scale-[0.98]'}`}>
+              {isSubmitting ? 'กำลังส่งข้อมูล...' : paymentMethod === 'cash' ? 'ยืนยันสั่งอาหาร (จ่ายเงินสด)' : 'ส่งสลิป ยืนยันคำสั่งซื้อ'} 
+              {!isSubmitting && <CheckCircle size={22} />}
             </button>
           )}
         </div>
