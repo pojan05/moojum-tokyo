@@ -7,9 +7,11 @@ export default function Admin() {
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // เพิ่ม storePhone และ storeBanner ใน state เริ่มต้น
+  // --- อัปเดต state รับค่า isStoreOpen, minOrderAmount, freeDeliveryThreshold ---
   const [data, setData] = useState({ 
-    promptPay: '', allowCash: false, storePhone: '', storeBanner: '', materials: [], menuItems: [], 
+    promptPay: '', allowCash: false, storePhone: '', storeBanner: '', 
+    isStoreOpen: true, minOrderAmount: 0, freeDeliveryThreshold: 0,
+    materials: [], menuItems: [], 
     delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
     discountCodes: [] 
   });
@@ -36,7 +38,10 @@ export default function Admin() {
           ...fetchedData, 
           allowCash: fetchedData.allowCash || false,
           storePhone: fetchedData.storePhone || '',
-          storeBanner: fetchedData.storeBanner || ''
+          storeBanner: fetchedData.storeBanner || '',
+          isStoreOpen: fetchedData.isStoreOpen !== false,
+          minOrderAmount: fetchedData.minOrderAmount || 0,
+          freeDeliveryThreshold: fetchedData.freeDeliveryThreshold || 0
         });
         setIsLoading(false);
       });
@@ -58,7 +63,7 @@ export default function Admin() {
     localStorage.removeItem('moojum_admin_auth');
     setIsAuthenticated(false);
     setPasscode('');
-    setData({ promptPay: '', allowCash: false, storePhone: '', storeBanner: '', materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
+    setData({ promptPay: '', allowCash: false, storePhone: '', storeBanner: '', isStoreOpen: true, minOrderAmount: 0, freeDeliveryThreshold: 0, materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
   };
 
   const saveSettings = async () => {
@@ -111,7 +116,6 @@ export default function Admin() {
     }
   };
 
-  // ฟังก์ชันอัปโหลดแบนเนอร์ร้าน
   const handleBannerUpload = async (file) => {
     if (!file) return;
     const formData = new FormData(); 
@@ -297,7 +301,6 @@ export default function Admin() {
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex gap-4 w-full">
                           
-                          {/* กล่องใส่รูปหรืออีโมจิ */}
                           <div className="relative w-16 h-16 shrink-0 group">
                             {item.image && item.image.startsWith('http') ? (
                               <img src={item.image} alt="menu" className="w-full h-full object-cover rounded-2xl border border-slate-200" />
@@ -451,6 +454,23 @@ export default function Admin() {
                   </div>
                 </div>
 
+                {/* --- ฟีเจอร์: ยอดสั่งขั้นต่ำ และ ส่งฟรี --- */}
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><ShoppingBag className="text-emerald-500"/> ตั้งค่าเงื่อนไขการสั่งซื้อ</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                      <label className="text-sm font-bold text-blue-800 block mb-1">ยอดสั่งซื้อขั้นต่ำ (บาท)</label>
+                      <p className="text-xs text-blue-600 mb-2">ลูกค้าต้องสั่งครบยอดนี้ถึงจะชำระเงินได้ (ใส่ 0 คือไม่มีขั้นต่ำ)</p>
+                      <input type="number" value={data.minOrderAmount} onChange={(e) => setData({...data, minOrderAmount: Number(e.target.value)})} className="w-full p-2.5 border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"/>
+                    </div>
+                    <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                      <label className="text-sm font-bold text-emerald-800 block mb-1">โปรโมชั่นส่งฟรี เมื่อสั่งครบ (บาท)</label>
+                      <p className="text-xs text-emerald-600 mb-2">ค่าส่งจะเป็น 0 บาท เมื่อยอดถึงกำหนด (ใส่ 0 คือไม่จัดโปร)</p>
+                      <input type="number" value={data.freeDeliveryThreshold} onChange={(e) => setData({...data, freeDeliveryThreshold: Number(e.target.value)})} className="w-full p-2.5 border border-emerald-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"/>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Tag className="text-blue-500"/> โค้ดส่วนลดค่าจัดส่ง</h3>
@@ -494,7 +514,22 @@ export default function Admin() {
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
 
-                {/* --- เพิ่มส่วนตั้งค่า ข้อมูลร้านค้าและแบนเนอร์ --- */}
+                {/* --- ฟีเจอร์: เปิด/ปิด ร้าน --- */}
+                <div className={`p-6 rounded-2xl shadow-sm border transition-colors flex flex-col md:flex-row justify-between items-center gap-4 ${data.isStoreOpen ? 'bg-white border-slate-100' : 'bg-rose-50 border-rose-200'}`}>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                      <span className={`w-3 h-3 rounded-full ${data.isStoreOpen ? 'bg-emerald-500' : 'bg-rose-500'} animate-pulse`}></span>
+                      สถานะร้านค้า (เปิด/ปิด)
+                    </h3>
+                    <p className={`text-sm ${data.isStoreOpen ? 'text-slate-500' : 'text-rose-600 font-medium'}`}>
+                      {data.isStoreOpen ? 'ร้านกำลังเปิดรับออเดอร์ตามปกติ' : 'ขณะนี้ร้านถูกปิด ลูกค้าจะไม่สามารถกดสั่งอาหารได้'}
+                    </p>
+                  </div>
+                  <button onClick={() => setData({...data, isStoreOpen: !data.isStoreOpen})} className={`px-6 py-3 rounded-xl font-bold transition-all shadow-md ${data.isStoreOpen ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-emerald-500 text-white hover:bg-emerald-600'}`}>
+                    {data.isStoreOpen ? 'ปิดร้าน (หยุดรับออเดอร์)' : 'เปิดร้าน (รับออเดอร์)'}
+                  </button>
+                </div>
+
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                   <h3 className="font-bold text-slate-800 text-lg mb-4">🏪 ข้อมูลร้านค้า & โปรโมชั่น</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
