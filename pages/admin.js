@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut, Camera } from 'lucide-react';
+import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut } from 'lucide-react';
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -8,7 +8,7 @@ export default function Admin() {
   const [authError, setAuthError] = useState('');
 
   const [data, setData] = useState({ 
-    promptPay: '', materials: [], menuItems: [], 
+    promptPay: '', allowCash: false, materials: [], menuItems: [], 
     delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
     discountCodes: [] 
   });
@@ -31,7 +31,8 @@ export default function Admin() {
     fetch('/api/settings')
       .then(res => res.json())
       .then(fetchedData => {
-        setData(fetchedData);
+        // อัปเดตข้อมูลโดยรักษาค่า allowCash เดิมถ้ามี ถ้าไม่มีให้เป็น false
+        setData({ ...fetchedData, allowCash: fetchedData.allowCash || false });
         setIsLoading(false);
       });
   };
@@ -52,7 +53,7 @@ export default function Admin() {
     localStorage.removeItem('moojum_admin_auth');
     setIsAuthenticated(false);
     setPasscode('');
-    setData({ promptPay: '', materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
+    setData({ promptPay: '', allowCash: false, materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
   };
 
   const saveSettings = async () => {
@@ -88,7 +89,6 @@ export default function Admin() {
     setData({ ...data, menuItems: updatedMenu });
   };
 
-  // อัปโหลดรูปภาพอาหาร
   const handleMenuImageUpload = async (id, file) => {
     if (!file) return;
     const formData = new FormData(); 
@@ -260,14 +260,12 @@ export default function Admin() {
             {/* TAB 1: MENU & RECIPE */}
             {activeTab === 'menu' && (
               <div className="space-y-6">
-                
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <h2 className="font-bold text-slate-700">รายการเมนูทั้งหมด</h2>
                   <button onClick={addMenuItem} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-orange-700 shadow-sm transition-all">
                     <Plus size={18} /> เพิ่มเมนูใหม่
                   </button>
                 </div>
-
                 {data.menuItems.map(item => {
                   const menuCost = calculateMenuCost(item.recipe);
                   const profit = item.price - menuCost;
@@ -482,7 +480,19 @@ export default function Admin() {
                     <input type="text" value={data.promptPay} onChange={(e) => setData({...data, promptPay: e.target.value})} className="border border-slate-300 p-2.5 rounded-lg w-48 text-center font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                {/* --- เพิ่มส่วนตั้งค่ารับเงินสด --- */}
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-lg">💵 รับเงินสดปลายทาง</h3>
+                    <p className="text-sm text-slate-500">หากปิดไว้ ลูกค้าจะถูกบังคับให้สแกนจ่าย QR Code เท่านั้น</p>
+                  </div>
+                  <button onClick={() => setData({...data, allowCash: !data.allowCash})} className={`px-6 py-2.5 rounded-xl font-bold transition-all shadow-sm ${data.allowCash ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
+                    {data.allowCash ? 'เปิดรับเงินสด (กดเพื่อปิด)' : 'ปิดรับเงินสด (กดเพื่อเปิด)'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                   <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-6 rounded-2xl shadow-sm text-white"><p className="text-green-100 font-medium mb-1">รายรับวันนี้</p><h3 className="text-4xl font-bold">฿0</h3></div>
                   <div className="bg-gradient-to-br from-red-500 to-rose-600 p-6 rounded-2xl shadow-sm text-white"><p className="text-red-100 font-medium mb-1">ต้นทุนวัตถุดิบวันนี้</p><h3 className="text-4xl font-bold">฿0</h3></div>
                   <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-6 rounded-2xl shadow-sm text-white"><p className="text-blue-100 font-medium mb-1">กำไรสุทธิ</p><h3 className="text-4xl font-bold">฿0</h3></div>
