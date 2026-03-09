@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-// เพิ่ม ShoppingBag เข้ามาในบรรทัดนี้แล้วครับ 👇
 import { Package, Utensils, LayoutDashboard, Plus, Trash2, Save, MapPin, Tag, Lock, LogOut, Camera, ShoppingBag } from 'lucide-react';
 
 export default function Admin() {
@@ -12,7 +11,8 @@ export default function Admin() {
     promptPay: '', allowCash: false, storePhone: '', storeBanner: '', 
     isStoreOpen: true, minOrderAmount: 0, freeDeliveryThreshold: 0,
     materials: [], menuItems: [], 
-    delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
+    // เพิ่ม maxDeliveryKm ในโครงสร้างข้อมูลเริ่มต้น
+    delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0, maxDeliveryKm: 15 },
     discountCodes: [] 
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -34,10 +34,10 @@ export default function Admin() {
     fetch('/api/settings')
       .then(res => res.json())
       .then(fetchedData => {
-        // อัปเดตการดึงข้อมูล ป้องกันบั๊กกรณีที่โครงสร้างข้อมูลเดิมยังไม่มี
         setData({ 
           ...fetchedData, 
-          delivery: fetchedData.delivery || { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 },
+          // เซ็ตค่า default เป็น 15 โล ถ้าระบบเดิมยังไม่มีค่านี้
+          delivery: fetchedData.delivery ? { ...fetchedData.delivery, maxDeliveryKm: fetchedData.delivery.maxDeliveryKm ?? 15 } : { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0, maxDeliveryKm: 15 },
           discountCodes: fetchedData.discountCodes || [],
           materials: fetchedData.materials || [],
           menuItems: fetchedData.menuItems || [],
@@ -68,7 +68,7 @@ export default function Admin() {
     localStorage.removeItem('moojum_admin_auth');
     setIsAuthenticated(false);
     setPasscode('');
-    setData({ promptPay: '', allowCash: false, storePhone: '', storeBanner: '', isStoreOpen: true, minOrderAmount: 0, freeDeliveryThreshold: 0, materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [] });
+    setData({ promptPay: '', allowCash: false, storePhone: '', storeBanner: '', isStoreOpen: true, minOrderAmount: 0, freeDeliveryThreshold: 0, materials: [], menuItems: [], delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0, maxDeliveryKm: 15 }, discountCodes: [] });
   };
 
   const saveSettings = async () => {
@@ -443,7 +443,9 @@ export default function Admin() {
                       <input type="number" value={data.delivery.storeLng} onChange={(e) => handleDeliveryChange('storeLng', e.target.value)} className="w-full p-2.5 border rounded-lg focus:outline-none focus:border-orange-500"/>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-orange-50 p-4 rounded-xl border border-orange-100">
+
+                  {/* เพิ่มช่องจำกัดระยะทางจัดส่ง */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-orange-50 p-4 rounded-xl border border-orange-100">
                     <div>
                       <label className="text-sm font-bold text-orange-800 block mb-1">ค่าส่งเริ่มต้น (Base Fee)</label>
                       <div className="flex items-center gap-2">
@@ -451,15 +453,20 @@ export default function Admin() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-sm font-bold text-orange-800 block mb-1">อัตราบวกเพิ่ม กิโลเมตรละ</label>
+                      <label className="text-sm font-bold text-orange-800 block mb-1">บวกเพิ่มกิโลเมตรละ</label>
                       <div className="flex items-center gap-2">
                         <input type="number" value={data.delivery.ratePerKm} onChange={(e) => handleDeliveryChange('ratePerKm', e.target.value)} className="w-full p-2.5 border border-orange-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500"/> <span className="font-bold text-orange-600">บาท</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-bold text-orange-800 block mb-1">ระยะจัดส่งสูงสุด</label>
+                      <div className="flex items-center gap-2">
+                        <input type="number" value={data.delivery.maxDeliveryKm} onChange={(e) => handleDeliveryChange('maxDeliveryKm', e.target.value)} className="w-full p-2.5 border border-orange-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500"/> <span className="font-bold text-orange-600">กม.</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* --- ฟีเจอร์: ยอดสั่งขั้นต่ำ และ ส่งฟรี --- */}
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><ShoppingBag className="text-emerald-500"/> ตั้งค่าเงื่อนไขการสั่งซื้อ</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -519,7 +526,6 @@ export default function Admin() {
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
 
-                {/* --- ฟีเจอร์: เปิด/ปิด ร้าน --- */}
                 <div className={`p-6 rounded-2xl shadow-sm border transition-colors flex flex-col md:flex-row justify-between items-center gap-4 ${data.isStoreOpen ? 'bg-white border-slate-100' : 'bg-rose-50 border-rose-200'}`}>
                   <div>
                     <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
