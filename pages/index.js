@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map, Ticket } from 'lucide-react';
+import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map, Ticket, Download } from 'lucide-react';
 
 export default function Home() {
   const [step, setStep] = useState(1);
   const [cart, setCart] = useState({});
-  // --- อัปเดตเพิ่ม note (หมายเหตุ) ---
   const [customerInfo, setCustomerInfo] = useState({ name: '', phone: '', addressDetail: '', note: '' });
   const [location, setLocation] = useState(null);
   const [isLocating, setIsLocating] = useState(false);
@@ -16,16 +15,15 @@ export default function Home() {
   const [paymentMethod, setPaymentMethod] = useState('promptpay');
   
   const [distanceKm, setDistanceKm] = useState(0);
-  const [deliveryFee, setDeliveryFee] = useState(0); // ค่าส่งตามระยะทาง (ดิบ)
+  const [deliveryFee, setDeliveryFee] = useState(0); 
   const [discountInput, setDiscountInput] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState(null);
   const [discountError, setDiscountError] = useState('');
   
-  // --- อัปเดตเพิ่ม isStoreOpen, minOrderAmount, freeDeliveryThreshold ---
   const [storeData, setStoreData] = useState({
     promptPay: '0812345678', allowCash: false, storePhone: '', storeBanner: '', 
     isStoreOpen: true, minOrderAmount: 0, freeDeliveryThreshold: 0,
-    delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [], menuItems: []
+    delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0, maxDeliveryKm: 15 }, discountCodes: [], menuItems: []
   });
 
   useEffect(() => {
@@ -35,7 +33,6 @@ export default function Home() {
   const allowCash = storeData.allowCash || false;
   const storePhone = storeData.storePhone || '';
   const storeBanner = storeData.storeBanner || '';
-  // ตัวแปรฟีเจอร์ใหม่
   const isStoreOpen = storeData.isStoreOpen !== false;
   const minOrderAmount = storeData.minOrderAmount || 0;
   const freeDeliveryThreshold = storeData.freeDeliveryThreshold || 0;
@@ -66,9 +63,9 @@ export default function Home() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const userLat = pos.coords.latitude; const userLng = pos.coords.longitude;
-        setLocation({ lat: userLat, lng: userLng });
+        const { storeLat = 0, storeLng = 0, baseFee = 0, ratePerKm = 0, maxDeliveryKm = 999 } = storeData.delivery || {};
         
-        const { storeLat = 0, storeLng = 0, baseFee = 0, ratePerKm = 0 } = storeData.delivery || {};
+        let finalDist = 0;
         
         if (storeLat && storeLng) {
           try {
@@ -78,24 +75,28 @@ export default function Home() {
               body: JSON.stringify({ origins: `${storeLat},${storeLng}`, destinations: `${userLat},${userLng}` })
             });
             const data = await response.json();
-            
-            if (data.distance) {
-              const dist = data.distance;
-              setDistanceKm(dist); 
-              setDeliveryFee(Math.ceil(baseFee + (dist * ratePerKm)));
-            } else {
-              const fallbackDist = calculateDistance(storeLat, storeLng, userLat, userLng);
-              setDistanceKm(fallbackDist); 
-              setDeliveryFee(Math.ceil(baseFee + (fallbackDist * ratePerKm)));
-            }
+            finalDist = data.distance ? data.distance : calculateDistance(storeLat, storeLng, userLat, userLng);
           } catch (err) {
-            const fallbackDist = calculateDistance(storeLat, storeLng, userLat, userLng);
-            setDistanceKm(fallbackDist); 
-            setDeliveryFee(Math.ceil(baseFee + (fallbackDist * ratePerKm)));
+            finalDist = calculateDistance(storeLat, storeLng, userLat, userLng);
           }
         } else {
-          setDistanceKm(0); setDeliveryFee(baseFee);
+          finalDist = 0;
         }
+
+        // --- เช็คเงื่อนไขระยะทางเกินกำหนด ---
+        if (finalDist > maxDeliveryKm) {
+          setError(`ขออภัยครับ ระยะทาง ${finalDist.toFixed(1)} กม. ไกลเกินพื้นที่จัดส่ง (ร้านส่งสูงสุดไม่เกิน ${maxDeliveryKm} กม.)`);
+          setLocation(null);
+          setIsLocating(false);
+          return;
+        }
+
+        const calculatedFee = Math.ceil(Number(baseFee) + (finalDist * Number(ratePerKm)));
+        
+        setDistanceKm(finalDist); 
+        setDeliveryFee(calculatedFee || 0); // ป้องกันบั๊กแสดงค่า NaN
+        setLocation({ lat: userLat, lng: userLng });
+        setError('');
         setIsLocating(false);
       },
       () => { setError('กรุณาอนุญาตการเข้าถึงตำแหน่ง (Location)'); setIsLocating(false); }
@@ -109,7 +110,6 @@ export default function Home() {
     const item = menuItems.find(m => m.id === id); return sum + (item ? item.price * qty : 0);
   }, 0);
   
-  // --- ระบบคำนวณโปรโมชั่นส่งฟรี ---
   const isFreeDelivery = freeDeliveryThreshold > 0 && totalFoodPrice >= freeDeliveryThreshold;
   const activeDeliveryFee = isFreeDelivery ? 0 : deliveryFee;
   
@@ -126,7 +126,7 @@ export default function Home() {
   const handleProceedToPayment = () => {
     if (!customerInfo.name.trim()) return setError('กรุณากรอกชื่อผู้รับ');
     if (!/^\d{10}$/.test(customerInfo.phone)) return setError('กรุณากรอกเบอร์โทร 10 หลัก');
-    if (!location) return setError('กรุณากดแชร์ตำแหน่งที่ตั้งจัดส่ง');
+    if (!location) return setError('กรุณากดแชร์ตำแหน่งที่ตั้งจัดส่ง (ปักหมุด)');
     setError(''); setStep(3);
   };
 
@@ -140,13 +140,12 @@ export default function Home() {
     setIsSubmitting(true); setError('');
     try {
       const orderDetails = Object.entries(cart).map(([id, qty]) => {
-        const item = menuItems.find(m => m.id === id); return { name: item ? item.name : id, qty: qty };
+        const item = menuItems.find(m => m.id === id); return { name: item ? item.name : id, qty: qty, price: item ? item.price : 0 };
       });
-      // --- อัปเดตการแสดงค่าจัดส่งในบิล ---
-      if (activeDeliveryFee > 0) orderDetails.push({ name: `🛵 ค่าจัดส่ง (${distanceKm.toFixed(1)} กม.)`, qty: 1 });
-      else if (isFreeDelivery && distanceKm > 0) orderDetails.push({ name: `🛵 ค่าจัดส่ง (โปรโมชั่นส่งฟรี!)`, qty: 1 });
+      if (activeDeliveryFee > 0) orderDetails.push({ name: `🛵 ค่าจัดส่ง (${distanceKm.toFixed(1)} กม.)`, qty: 1, price: activeDeliveryFee });
+      else if (isFreeDelivery && distanceKm > 0) orderDetails.push({ name: `🛵 ค่าจัดส่ง (โปรโมชั่นส่งฟรี!)`, qty: 1, price: 0 });
       
-      if (appliedDiscount && activeDeliveryFee > 0) orderDetails.push({ name: `🎟️ ส่วนลดค่าส่ง (-${appliedDiscount.percent}%)`, qty: 1 });
+      if (appliedDiscount && activeDeliveryFee > 0) orderDetails.push({ name: `🎟️ ส่วนลดค่าส่ง (-${appliedDiscount.percent}%)`, qty: 1, price: -discountAmount });
 
       let finalSlipUrl = 'CASH_ON_DELIVERY';
       if (paymentMethod === 'promptpay') {
@@ -173,11 +172,26 @@ export default function Home() {
     finally { setIsSubmitting(false); }
   };
 
+  // --- ฟังก์ชันแคปหน้าจอบิลใบเสร็จ ---
+  const downloadReceipt = () => {
+    const receiptElement = document.getElementById('receipt-box');
+    if (receiptElement && window.html2canvas) {
+      window.html2canvas(receiptElement, { scale: 2, backgroundColor: '#ffffff' }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `Bill_Moojum_${new Date().getTime()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
+    }
+  };
+
   return (
     <>
       <Head>
         <title>หมูจุ่มโตเกียว Delivery</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
+        {/* โหลด Library สำหรับทำรูปภาพใบเสร็จ */}
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
       </Head>
       <div className="min-h-screen bg-[#f8f9fa] font-sans text-slate-800 pb-32">
         {/* Header - Sticky */}
@@ -221,14 +235,12 @@ export default function Home() {
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in duration-300">
               
-              {/* --- ฟีเจอร์: แจ้งเตือนปิดร้าน --- */}
               {!isStoreOpen && (
                 <div className="bg-rose-100 border border-rose-200 text-rose-700 p-4 rounded-2xl font-bold text-center flex items-center justify-center gap-2 shadow-sm animate-pulse">
                   <AlertCircle size={20} /> ขณะนี้ร้านปิดให้บริการ เปิดรับออเดอร์อีกครั้งพรุ่งนี้
                 </div>
               )}
 
-              {/* --- ฟีเจอร์: บาร์แจ้งยอดส่งฟรี (Upsell) --- */}
               {freeDeliveryThreshold > 0 && isStoreOpen && (
                 <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-2xl text-sm font-bold flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-2"><div className="bg-emerald-200 p-1.5 rounded-full"><ShoppingBag size={14} /></div> ส่งฟรีเมื่อสั่งครบ ฿{freeDeliveryThreshold}!</div>
@@ -331,7 +343,10 @@ export default function Home() {
                       <div className="w-full p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2 text-emerald-700 mb-1"><CheckCircle size={20} /><span className="font-bold text-sm">ปักหมุดสำเร็จ</span></div>
-                          <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded-lg self-start">ระยะทาง {distanceKm.toFixed(1)} กม. | ค่าส่ง {isFreeDelivery ? 'ฟรี' : `฿${deliveryFee}`}</span>
+                          <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded-lg self-start">
+                            {/* --- อัปเดตแสดงราคาค่าส่งให้ชัดเจน --- */}
+                            ระยะทาง {distanceKm.toFixed(1)} กม. | ค่าส่ง {isFreeDelivery ? 'ฟรี' : `฿${deliveryFee}`}
+                          </span>
                         </div>
                         <button onClick={getLocation} className="text-xs font-black text-emerald-700 bg-emerald-200 px-3 py-2 rounded-xl hover:bg-emerald-300 active:scale-95 transition-all">ปักหมุดใหม่</button>
                       </div>
@@ -341,7 +356,6 @@ export default function Home() {
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">รายละเอียดจุดสังเกต (ถ้ามี)</label>
                     <textarea className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl resize-none h-20 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all text-[16px]" placeholder="เช่น ตึก A ชั้น 5, หน้าหมู่บ้าน" value={customerInfo.addressDetail} onChange={e => setCustomerInfo({...customerInfo, addressDetail: e.target.value})} />
                   </div>
-                  {/* --- ฟีเจอร์: หมายเหตุถึงร้าน --- */}
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1.5">หมายเหตุถึงร้าน (ถ้ามี)</label>
                     <textarea className="w-full p-4 bg-orange-50/50 border border-orange-200 rounded-2xl resize-none h-20 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all text-[16px]" placeholder="เช่น ขอช้อนส้อมเพิ่ม, ไม่ทานเผ็ด, หมูสะเต๊ะเกรียมๆ" value={customerInfo.note} onChange={e => setCustomerInfo({...customerInfo, note: e.target.value})} />
@@ -373,6 +387,7 @@ export default function Home() {
                     return <div key={id} className="flex justify-between text-sm items-center"><span className="text-slate-600 font-medium"><span className="font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded mr-2">{qty}x</span> {item ? item.name : id}</span><span className="font-bold text-slate-800">฿{item ? item.price * qty : 0}</span></div>;
                   })}
                   <div className="border-t border-dashed border-slate-200 pt-3 mt-3 space-y-2">
+                    {/* --- อัปเดตแสดงราคาค่าจัดส่ง --- */}
                     <div className="flex justify-between text-sm items-center"><span className="text-slate-500 font-medium">🛵 ค่าจัดส่ง ({distanceKm.toFixed(1)} กม.)</span><span className="font-bold text-slate-800">{isFreeDelivery ? <span className="text-emerald-500">ส่งฟรี</span> : `฿${activeDeliveryFee}`}</span></div>
                     {appliedDiscount && activeDeliveryFee > 0 && <div className="flex justify-between text-sm items-center text-emerald-600 bg-emerald-50 p-2 rounded-xl mt-1"><span className="font-bold flex items-center gap-1"><Ticket size={14}/> ส่วนลด ({appliedDiscount.code})</span><span className="font-black">-฿{discountAmount}</span></div>}
                   </div>
@@ -430,13 +445,54 @@ export default function Home() {
             </div>
           )}
 
-          {/* Step 4: สำเร็จ */}
+          {/* --- ฟีเจอร์: บิลใบเสร็จ (Receipt) --- */}
           {step === 4 && (
-            <div className="bg-white p-10 rounded-3xl shadow-xl border border-emerald-100 text-center mt-12 animate-in zoom-in-95 duration-500">
-              <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner"><CheckCircle className="text-emerald-500 w-12 h-12" /></div>
-              <h2 className="text-3xl font-black text-slate-800 mb-3 tracking-tight">ส่งออเดอร์สำเร็จ!</h2>
-              <p className="text-slate-500 text-base mb-8 leading-relaxed">ระบบส่งข้อมูลและพิกัดจัดส่งให้ทางร้านแล้ว<br/>กรุณารอรับอาหารได้เลยครับ 🛵💨</p>
-              <button onClick={() => window.location.reload()} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3 rounded-2xl font-bold transition-colors">สั่งออเดอร์ใหม่</button>
+            <div className="space-y-4 animate-in zoom-in-95 duration-500 mt-6">
+              
+              {/* กล่องใบเสร็จที่จะถูกแคปเจอร์ */}
+              <div id="receipt-box" className="bg-white px-6 py-8 rounded-t-3xl shadow-sm border border-slate-200 max-w-[320px] mx-auto relative overflow-hidden">
+                <div className="text-center mb-6">
+                  <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner"><CheckCircle className="text-emerald-500 w-8 h-8" /></div>
+                  <h2 className="text-xl font-black text-slate-800 tracking-tight">ส่งออเดอร์สำเร็จ!</h2>
+                  <p className="text-[11px] font-medium text-slate-400 mt-1">วันที่ {new Date().toLocaleDateString('th-TH')} • เวลา {new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+
+                <div className="border-t-2 border-dashed border-slate-200 py-4 mb-4">
+                  <h3 className="font-black text-slate-800 mb-3 text-sm">รายการอาหาร</h3>
+                  {Object.entries(cart).map(([id, qty]) => {
+                    const item = menuItems.find(m => m.id === id);
+                    return <div key={id} className="flex justify-between text-[13px] items-start mb-2"><span className="text-slate-700 pr-2"><span className="font-black text-orange-600 mr-1">{qty}x</span> {item ? item.name : id}</span><span className="font-bold text-slate-800 whitespace-nowrap">฿{item ? item.price * qty : 0}</span></div>;
+                  })}
+                  <div className="border-t border-slate-100 pt-3 mt-3">
+                    <div className="flex justify-between text-[13px] items-center mb-1"><span className="text-slate-500">🛵 ค่าส่ง ({distanceKm.toFixed(1)} กม.)</span><span className="font-bold text-slate-800">{isFreeDelivery ? 'ส่งฟรี' : `฿${activeDeliveryFee}`}</span></div>
+                    {appliedDiscount && activeDeliveryFee > 0 && <div className="flex justify-between text-[13px] items-center text-emerald-600"><span className="font-bold">🎟️ ส่วนลด ({appliedDiscount.code})</span><span className="font-bold">-฿{discountAmount}</span></div>}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-end border-t-2 border-slate-800 pt-4 mb-6">
+                  <span className="font-black text-slate-800 text-sm">ยอดสุทธิ</span>
+                  <span className="text-3xl font-black text-slate-900 tracking-tight">฿{finalTotalPrice}</span>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-2xl text-[12px] space-y-1.5 text-slate-600 border border-slate-100">
+                  <p className="flex gap-2"><span className="font-bold text-slate-400 w-12">ลูกค้า:</span> <span className="font-medium text-slate-800">{customerInfo.name}</span></p>
+                  <p className="flex gap-2"><span className="font-bold text-slate-400 w-12">ติดต่อ:</span> <span className="font-medium text-slate-800">{customerInfo.phone}</span></p>
+                  <p className="flex gap-2"><span className="font-bold text-slate-400 w-12">ชำระเงิน:</span> <span className="font-medium text-slate-800">{paymentMethod === 'cash' ? '💵 เงินสดปลายทาง' : '📱 โอนเงิน (ชำระแล้ว)'}</span></p>
+                </div>
+              </div>
+
+              {/* ขอบหยักล่างของใบเสร็จ (รอยฉีก) */}
+              <div className="max-w-[320px] mx-auto h-3 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMCwwIDQsOCA4LDAiIGZpbGw9IiNmOGY5ZmEiLz48L3N2Zz4=')] relative -top-4 rounded-b-3xl"></div>
+
+              {/* ปุ่มบันทึกรูป */}
+              <div className="flex flex-col gap-3 max-w-[320px] mx-auto relative -top-2">
+                <button onClick={downloadReceipt} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black flex justify-center items-center gap-2 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-lg shadow-blue-200">
+                  <Download size={20} /> บันทึกภาพใบเสร็จ
+                </button>
+                <button onClick={() => window.location.reload()} className="w-full bg-white text-slate-700 py-4 rounded-2xl font-bold border-2 border-slate-200 hover:bg-slate-50 active:scale-[0.98] transition-all">
+                  สั่งออเดอร์ใหม่
+                </button>
+              </div>
             </div>
           )}
         </main>
@@ -444,7 +500,6 @@ export default function Home() {
         {/* Floating Bottom Bar */}
         {step === 1 && totalItems > 0 && (
           <div className="fixed bottom-6 left-4 right-4 z-40 animate-in slide-in-from-bottom-10 fade-in duration-300 max-w-md mx-auto">
-            {/* --- ฟีเจอร์: ล็อกปุ่มเมื่อร้านปิด หรือ ยอดไม่ถึง --- */}
             {!isStoreOpen ? (
               <button disabled className="w-full bg-slate-400 text-white rounded-3xl p-4 px-6 font-black flex items-center justify-center shadow-lg cursor-not-allowed">
                 ร้านปิดให้บริการชั่วคราว
