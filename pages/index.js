@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
-import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map, Ticket } from 'lucide-react';
+import { ShoppingBag, MapPin, Phone, User, Camera, CheckCircle, ChevronRight, Plus, Minus, AlertCircle, Utensils, Map, Ticket, X } from 'lucide-react';
 
 export default function Home() {
   const [step, setStep] = useState(1);
@@ -26,7 +26,9 @@ export default function Home() {
     delivery: { storeLat: 0, storeLng: 0, baseFee: 0, ratePerKm: 0 }, discountCodes: [], menuItems: []
   });
 
-  // สำหรับจับเวลาการกดค้าง (Long Press)
+  // --- State สำหรับระบบสร้างรูปภาพบิล ---
+  const [receiptImageBase64, setReceiptImageBase64] = useState(null);
+  const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const pressTimer = useRef(null);
 
   useEffect(() => {
@@ -172,11 +174,11 @@ export default function Home() {
   };
 
   // ------------------------------------------------------------------
-  // ฟังก์ชันสำหรับการจับเวลา กดค้างเพื่อบันทึกรูปภาพ (Long Press to Save)
+  // ฟังก์ชันสำหรับการจับเวลา กดค้างเพื่อแสดงรูปภาพสำหรับบันทึก (Generate Image)
   // ------------------------------------------------------------------
   const handlePressStart = () => {
     pressTimer.current = setTimeout(() => {
-      saveReceipt();
+      generateReceiptImage();
     }, 1000); // ตั้งค่าให้กดค้าง 1 วินาที
   };
 
@@ -186,25 +188,23 @@ export default function Home() {
     }
   };
 
-  const saveReceipt = async () => {
+  const generateReceiptImage = async () => {
     try {
-      // โหลด html2canvas แบบ dynamic เพื่อไม่ให้โหลดหนักในหน้าแรก
+      setIsGeneratingReceipt(true);
       const html2canvas = (await import('html2canvas')).default;
       const element = document.getElementById('receipt-element');
       if (!element) return;
       
+      // แปลง HTML เป็น Canvas และสร้าง Data URL เป็นภาพ PNG
       const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
       const image = canvas.toDataURL('image/png');
       
-      const link = document.createElement('a');
-      link.href = image;
-      link.download = `receipt-${customerInfo.name || 'order'}.png`;
-      link.click();
-      
-      alert('บันทึกรูปภาพบิลเรียบร้อยแล้ว!');
+      setReceiptImageBase64(image);
     } catch (err) {
-      console.error('Error saving receipt:', err);
-      alert('ไม่สามารถดาวน์โหลดรูปอัตโนมัติได้ กรุณาแคปหน้าจอแทนครับ');
+      console.error('Error generating receipt:', err);
+      alert('ไม่สามารถสร้างรูปภาพได้ กรุณาแคปหน้าจอแทนครับ');
+    } finally {
+      setIsGeneratingReceipt(false);
     }
   };
 
@@ -214,7 +214,28 @@ export default function Home() {
         <title>หมูจุ่มโตเกียว Delivery</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
       </Head>
-      <div className="min-h-screen bg-[#f8f9fa] font-sans text-slate-800 pb-32 select-none">
+
+      {/* --- Modal แสดงรูปภาพที่แปลงเสร็จแล้ว เพื่อให้กดค้างบันทึก --- */}
+      {receiptImageBase64 && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="w-full max-w-md flex flex-col items-center">
+            <p className="text-white mb-4 font-bold flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full shadow-lg">
+              ⬇️ แตะค้างที่รูปภาพเพื่อบันทึกลงเครื่อง
+            </p>
+            <div className="relative w-full rounded-2xl overflow-hidden shadow-2xl">
+              <img src={receiptImageBase64} alt="Receipt Image" className="w-full h-auto object-contain" />
+            </div>
+            <button 
+              onClick={() => setReceiptImageBase64(null)} 
+              className="mt-8 bg-white/20 hover:bg-white/30 text-white px-8 py-3 rounded-full font-bold transition-all flex items-center gap-2"
+            >
+              <X size={20} /> ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="min-h-screen bg-[#f8f9fa] font-sans text-slate-800 pb-32 select-none relative">
         {/* Header - Sticky */}
         <header className="bg-gradient-to-r from-orange-500 to-rose-500 text-white p-4 shadow-md sticky top-0 z-50 rounded-b-3xl">
           <div className="max-w-md mx-auto flex items-center justify-between">
@@ -459,17 +480,32 @@ export default function Home() {
             </div>
           )}
 
-          {/* Step 4: สำเร็จ & แสดงใบเสร็จสำหรับบันทึก */}
+          {/* Step 4: สำเร็จ & แสดงใบเสร็จสำหรับกดค้าง */}
           {step === 4 && (
             <div className="animate-in zoom-in-95 duration-500 flex flex-col items-center mt-6">
-              <p className="text-sm text-slate-500 mb-4 font-bold flex items-center gap-2 bg-slate-100 py-2 px-4 rounded-full">
-                 💡 แตะค้างที่บิลด้านล่างเพื่อบันทึก หรือแคปหน้าจอได้เลย
-              </p>
+              
+              {/* แถบแจ้งเตือนวิธีบันทึกภาพ */}
+              <div className="w-full bg-blue-50 border border-blue-200 text-blue-700 p-4 rounded-2xl flex items-center justify-between gap-3 mb-6 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <Camera className="w-6 h-6 shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-black">ต้องการบันทึกบิล?</p>
+                    <p className="opacity-90">แตะค้างที่บิลด้านล่าง 1 วินาที หรือแคปหน้าจอได้เลยครับ</p>
+                  </div>
+                </div>
+              </div>
 
-              {/* คอนเทนเนอร์บิลที่จะถูกบันทึก (ผูกอีเวนต์กดค้างไว้ที่นี่) */}
+              {/* แสดง Loading ตอนกำลังแปลงภาพ */}
+              {isGeneratingReceipt && (
+                <div className="text-orange-500 font-bold mb-4 animate-pulse">
+                  กำลังสร้างรูปภาพ...
+                </div>
+              )}
+
+              {/* คอนเทนเนอร์บิลที่จะถูกแปลงเป็นภาพ (ผูกอีเวนต์กดค้างไว้ที่นี่) */}
               <div 
                 id="receipt-element" 
-                className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 w-full relative select-none cursor-pointer"
+                className={`bg-white p-8 rounded-3xl shadow-xl border border-slate-100 w-full relative select-none cursor-pointer transition-transform ${isGeneratingReceipt ? 'opacity-50' : 'active:scale-[0.98]'}`}
                 onTouchStart={handlePressStart}
                 onTouchEnd={handlePressEnd}
                 onMouseDown={handlePressStart}
